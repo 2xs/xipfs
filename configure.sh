@@ -48,17 +48,20 @@ main() {
     base=$(dirname "$0")
     if [ "$#" -lt 1 ];
     then
-        usage && exit 1
+        usage
+        exit 1
     fi
     board=${1%=*}
     if ! [ "$board" = '--board' ];
     then
-        usage && exit 1
+        usage
+        exit 1
     fi
     name=${1#*=}
     if ! [ -f "$base"/boards/"$name"/xipfs_config.h ];
     then
-        usage && exit 1
+        usage
+        exit 1
     fi
     printf 'BOARD = %s\n' "$name" > "$base"/toolchain.mk
     exit 0
