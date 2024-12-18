@@ -297,7 +297,9 @@ xipfs_exec_enter(crt0_ctx_t *crt0_ctx UNUSED,
 /**
  * @internal
  *
- * @brief
+ * @brief Clean up the context of the relocatable binary
+ *
+ * @param exec_ctx The address of the context to clean up
  */
 static inline void
 exec_ctx_cleanup(exec_ctx_t *exec_ctx)
