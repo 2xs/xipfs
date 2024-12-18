@@ -1477,7 +1477,7 @@ xipfs_stat(xipfs_mount_t *mp, const char *path,
 
 int
 xipfs_statvfs(xipfs_mount_t *mp, const char *restrict path,
-              struct statvfs *restrict buf)
+              struct xipfs_statvfs *restrict buf)
 {
     unsigned free_pages, page_number;
     int ret;
