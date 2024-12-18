@@ -223,6 +223,13 @@ typedef struct exec_ctx_s {
 /**
  * @internal
  *
+ * @brief The execution context of a relocatable binary
+ */
+static exec_ctx_t exec_ctx;
+
+/**
+ * @internal
+ *
  * @brief A reference to the stack's state prior to invoking
  * execv(2)
  */
@@ -854,8 +861,6 @@ xipfs_file_write_8(xipfs_file_t *filp, off_t pos, char byte)
 int
 xipfs_file_exec(xipfs_file_t *filp, char *const argv[])
 {
-    static exec_ctx_t exec_ctx;
-
     if (xipfs_file_filp_check(filp) < 0) {
         /* xipfs_errno was set */
         return -1;
