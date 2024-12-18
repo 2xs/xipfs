@@ -45,6 +45,7 @@ Usage: %s <MANDATORY ARGUMENT>
 }
 
 main() {
+    base=$(dirname "$0")
     if [ "$#" -lt 1 ];
     then
         usage && exit 1
@@ -55,11 +56,11 @@ main() {
         usage && exit 1
     fi
     name=${1#*=}
-    if ! [ -f boards/"$name"/xipfs_config.h ];
+    if ! [ -f "$base"/boards/"$name"/xipfs_config.h ];
     then
         usage && exit 1
     fi
-    printf 'BOARD = %s\n' "$name" > toolchain.mk
+    printf 'BOARD = %s\n' "$name" > "$base"/toolchain.mk
     exit 0
 }
 
