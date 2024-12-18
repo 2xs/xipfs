@@ -233,7 +233,7 @@ static exec_ctx_t exec_ctx;
  * @brief A pointer to the first instruction to execute in the
  * relocatable binary
  */
-static void *_exec_entry_point;
+static void *_exec_entry_point USED;
 
 /**
  * @internal
