@@ -34,3 +34,5 @@
 PREFIX        = arm-none-eabi-
 BOARD_CFLAGS  = -mthumb
 BOARD_CFLAGS += -mcpu=cortex-m4
+BOARD_CFLAGS += -mfloat-abi=hard
+BOARD_CFLAGS += -mfpu=fpv4-sp-d16
