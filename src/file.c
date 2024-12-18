@@ -230,6 +230,14 @@ static exec_ctx_t exec_ctx;
 /**
  * @internal
  *
+ * @brief A pointer to the first instruction to execute in the
+ * relocatable binary
+ */
+static void *_exec_entry_point;
+
+/**
+ * @internal
+ *
  * @brief A reference to the stack's state prior to invoking
  * execv(2)
  */
@@ -292,6 +300,20 @@ xipfs_exec_enter(crt0_ctx_t *crt0_ctx UNUSED,
         "   ldr    r4, [r4]               \n"
         "   blx    r4                     \n"
     );
+}
+
+/**
+ * @internal
+ *
+ * @brief Converts an address into a thumb address
+ *
+ * @param addr The address to convert
+ *
+ * @return The converted address
+ */
+static inline void *thumb(void *addr)
+{
+    return (void *)((uintptr_t)addr | 1);
 }
 
 /**
@@ -870,6 +892,7 @@ xipfs_file_exec(xipfs_file_t *filp, char *const argv[])
 
     exec_ctx_cleanup(&exec_ctx);
     exec_ctx_init(&exec_ctx, filp, argv);
+    _exec_entry_point = thumb(&filp->buf[0]);
     xipfs_exec_enter(&exec_ctx.crt0_ctx, filp->buf, exec_ctx.stktop);
     exec_ctx_cleanup(&exec_ctx);
 
