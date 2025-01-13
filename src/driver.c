@@ -320,7 +320,7 @@ xipfs_mp_check(xipfs_mount_t *mp)
     if (mp->magic != XIPFS_MAGIC) {
         return -EINVAL;
     }
-    if (xipfs_flash_in(mp->page_addr)) {
+    if (!xipfs_flash_in(mp->page_addr)) {
         return -EINVAL;
     }
     if (mp->page_num == 0) {
@@ -349,7 +349,6 @@ xipfs_file_desc_check(xipfs_mount_t *mp, xipfs_file_desc_t *descp)
 
     start = (uintptr_t)mp->page_addr;
     end = start + mp->page_num * XIPFS_NVM_PAGE_SIZE;
-    filp = (uintptr_t)descp->filp;
 
     if (descp == NULL) {
         return -EFAULT;
@@ -357,6 +356,7 @@ xipfs_file_desc_check(xipfs_mount_t *mp, xipfs_file_desc_t *descp)
     if (descp->filp == NULL) {
         return -EINVAL;
     }
+    filp = (uintptr_t)descp->filp;
     if (!(filp >= start && filp < end)) {
         return -EINVAL;
     }
@@ -389,15 +389,15 @@ xipfs_close(xipfs_mount_t *mp, xipfs_file_desc_t *descp)
     if ((ret = xipfs_mp_check(mp)) < 0) {
         return ret;
     }
+    if ((uintptr_t)descp->filp == (uintptr_t)xipfs_infos_file) {
+        /* nothing to do */
+        return 0;
+    }
     if ((ret = xipfs_file_desc_check(mp, descp)) < 0) {
         return ret;
     }
     if ((ret = xipfs_file_desc_tracked(descp)) < 0) {
         return ret;
-    }
-    if ((uintptr_t)descp->filp == (uintptr_t)xipfs_infos_file) {
-        /* nothing to do */
-        return 0;
     }
     if ((size = xipfs_file_get_size(descp->filp)) < 0) {
         return -EIO;
@@ -561,9 +561,6 @@ xipfs_open(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
             (flags & O_RDWR) == O_RDWR) {
             return -EACCES;
         }
-        if ((ret = xipfs_file_desc_track(descp)) < 0) {
-            return ret;
-        }
         descp->filp = (void *)xipfs_infos_file;
         descp->flags = flags;
         descp->pos = 0;
@@ -616,7 +613,7 @@ xipfs_open(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
         return -EIO;
     }
     if ((flags & O_APPEND) == O_APPEND) {
-        if ((pos = xipfs_file_get_size(descp->filp)) < 0) {
+        if ((pos = xipfs_file_get_size(filp)) < 0) {
             return -EIO;
         }
     } else {
@@ -641,6 +638,16 @@ xipfs_read(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     size_t i;
     int ret;
 
+    /** Special case : virtual file
+     * This code is used to retrieve the xipfs_mount_t where it is not provided
+     */
+    if ( (descp != NULL) && ((uintptr_t)descp->filp == (uintptr_t)xipfs_infos_file) ) {
+        for (i = 0; i < nbytes && i < sizeof(xipfs_mount_t); i++) {
+            ((char *)dest)[i] = ((char *)mp)[i];
+        }
+        return i;
+    }
+
     if ((ret = xipfs_mp_check(mp)) < 0) {
         return ret;
     }
@@ -656,12 +663,6 @@ xipfs_read(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     if (((descp->flags & O_RDONLY) != O_RDONLY) &&
         ((descp->flags & O_RDWR) != O_RDWR)) {
         return -EACCES;
-    }
-    if ((uintptr_t)descp->filp == (uintptr_t)xipfs_infos_file) {
-        for (i = 0; i < nbytes && i < sizeof(xipfs_mount_t); i++) {
-            ((char *)dest)[i] = ((char *)mp)[i];
-        }
-        return i;
     }
     if ((size = xipfs_file_get_size(descp->filp)) < 0) {
         return -EIO;
@@ -1343,7 +1344,7 @@ xipfs_rename(xipfs_mount_t *mp, const char *from_path,
             }
             renamed = (size_t)ret;
             break;
-        }   
+        }
         case XIPFS_PATH_EXISTS_AS_NONEMPTY_DIR:
             return -ENOTEMPTY;
         case XIPFS_PATH_INVALID_BECAUSE_NOT_DIRS:

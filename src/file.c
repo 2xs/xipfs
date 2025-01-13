@@ -276,9 +276,6 @@ xipfs_exec_exit(int status UNUSED)
 /**
  * @internal
  *
- * @note This function has the same prototype as the _exec_exit
- * function
- *
  * @brief Starts the execution of the binary in the current RIOT
  * thread
  */
@@ -326,7 +323,7 @@ static inline void *thumb(void *addr)
 static inline void
 exec_ctx_cleanup(exec_ctx_t *exec_ctx)
 {
-    (void)memset(&exec_ctx, 0, sizeof(*exec_ctx));
+    (void)memset(exec_ctx, 0, sizeof(*exec_ctx));
 }
 
 /**
@@ -894,7 +891,6 @@ xipfs_file_exec(xipfs_file_t *filp, char *const argv[])
     exec_ctx_init(&exec_ctx, filp, argv);
     _exec_entry_point = thumb(&filp->buf[0]);
     xipfs_exec_enter(&exec_ctx.crt0_ctx, filp->buf, exec_ctx.stktop);
-    exec_ctx_cleanup(&exec_ctx);
 
     return 0;
 }
