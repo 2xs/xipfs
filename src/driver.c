@@ -425,19 +425,18 @@ xipfs_fstat(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     if (buf == NULL) {
         return -EFAULT;
     }
-
     if ((ret = xipfs_mp_check(mp)) < 0) {
         return ret;
     }
     if ((ret = xipfs_file_desc_check(mp, descp)) < 0) {
         return ret;
     }
-    if ((ret = xipfs_file_desc_tracked(descp)) < 0) {
-        return ret;
-    }
     if ((uintptr_t)descp->filp == (uintptr_t)xipfs_infos_file) {
         /* cannot fstat(2) */
         return -EBADF;
+    }
+    if ((ret = xipfs_file_desc_tracked(descp)) < 0) {
+        return ret;
     }
     if ((size = xipfs_file_get_size(descp->filp)) < 0) {
         return -EIO;
@@ -538,16 +537,17 @@ xipfs_open(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     if (name == NULL) {
         return -EFAULT;
     }
+
     /* only these flags are supported */
-    if (!((flags & O_CREAT)  == O_CREAT  ||
-          (flags & O_EXCL)   == O_EXCL   ||
-          (flags & O_WRONLY) == O_WRONLY ||
-          (flags & O_RDONLY) == O_RDONLY ||
-          (flags & O_RDWR)   == O_RDWR   ||
-          (flags & O_APPEND) == O_APPEND))
-    {
+#define XIPFS_SUPPORTED_FLAGS \
+(                                             \
+    O_CREAT | O_EXCL | O_WRONLY | O_RDONLY |  \
+    O_RDWR  | O_APPEND                        \
+)
+    if ((flags & ~XIPFS_SUPPORTED_FLAGS) != 0) {
         return -EINVAL;
     }
+#undef XIPFS_SUPPORTED_FLAGS
     len = strnlen(name, XIPFS_PATH_MAX);
     if (len == XIPFS_PATH_MAX) {
         return -ENAMETOOLONG;
