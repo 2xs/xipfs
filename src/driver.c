@@ -664,8 +664,8 @@ xipfs_read(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     if (dest == NULL) {
         return -EFAULT;
     }
-    if (((descp->flags & O_RDONLY) != O_RDONLY) &&
-        ((descp->flags & O_RDWR) != O_RDWR)) {
+    if ( ((desc.flags & O_RDONLY) != O_RDONLY) ||
+         ((desc.flags & O_RDWR)   != O_RDWR) ) {
         return -EACCES;
     }
     if ((size = xipfs_file_get_size(descp->filp)) < 0) {
