@@ -422,6 +422,10 @@ xipfs_fstat(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     off_t size, reserved;
     int ret;
 
+    if (buf == NULL) {
+        return -EFAULT;
+    }
+
     if ((ret = xipfs_mp_check(mp)) < 0) {
         return ret;
     }
