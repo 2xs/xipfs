@@ -781,20 +781,11 @@ xipfs_opendir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp,
     }
 
     xipfs_errno = XIPFS_OK;
-    if ((headp = xipfs_fs_head(mp)) == NULL) {
-        if (xipfs_errno != XIPFS_OK) {
-            return -EIO;
-        }
-        /* this file system is empty, not an error */
-        if ((ret = xipfs_dir_desc_track(descp)) < 0) {
-            return ret;
-        }
-        descp->dirname[0] = '/';
-        descp->dirname[1] = '\0';
-        descp->filp = NULL;
-        return 0;
+    headp = xipfs_fs_head(mp);
+    if (xipfs_errno != XIPFS_OK) {
+        return -EIO;
     }
-    if (dirname[0] == '/' && dirname[1] == '\0') {
+    if ( (headp == NULL) && (dirname[0] == '/' && dirname[1] == '\0') ) {
         /* the root of the file system is always present */
         if ((ret = xipfs_dir_desc_track(descp)) < 0) {
             return ret;
