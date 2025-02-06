@@ -428,12 +428,13 @@ xipfs_fstat(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     if ((ret = xipfs_mp_check(mp)) < 0) {
         return ret;
     }
-    if ((ret = xipfs_file_desc_check(mp, descp)) < 0) {
-        return ret;
-    }
-    if ((uintptr_t)descp->filp == (uintptr_t)xipfs_infos_file) {
+    if ( (descp != NULL) &&
+         ((uintptr_t)descp->filp == (uintptr_t)xipfs_infos_file) ) {
         /* cannot fstat(2) */
         return -EBADF;
+    }
+    if ((ret = xipfs_file_desc_check(mp, descp)) < 0) {
+        return ret;
     }
     if ((ret = xipfs_file_desc_tracked(descp)) < 0) {
         return ret;
@@ -560,7 +561,7 @@ xipfs_open(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
             return -EINVAL;
     }
 #undef XIPFS_SUPPORTED_FLAGS
-#undef XIPFS_SUPPORTED_FLAGS
+
     len = strnlen(name, XIPFS_PATH_MAX);
     if (len == XIPFS_PATH_MAX) {
         return -ENAMETOOLONG;
@@ -677,9 +678,13 @@ xipfs_read(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     if (dest == NULL) {
         return -EFAULT;
     }
-    if ( ((descp->flags & O_RDONLY) != O_RDONLY) ||
-         ((descp->flags & O_RDWR)   != O_RDWR) ) {
-        return -EACCES;
+    switch(descp->flags & O_ACCMODE) {
+        case O_RDONLY :
+            /* fallthrough */
+        case O_RDWR :
+            break;
+        default :
+            return -EACCES;
     }
     if ((size = xipfs_file_get_size(descp->filp)) < 0) {
         return -EIO;
@@ -799,7 +804,9 @@ xipfs_opendir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp,
         return -EIO;
     }
     if ( (headp == NULL) && (dirname[0] == '/' && dirname[1] == '\0') ) {
-        /* the root of the file system is always present */
+        /* this file system is empty, not an error
+         * the root of the file system is always present
+         */
         if ((ret = xipfs_dir_desc_track(descp)) < 0) {
             return ret;
         }
@@ -821,6 +828,7 @@ xipfs_opendir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp,
         break;
     case XIPFS_PATH_INVALID_BECAUSE_NOT_FOUND:
     case XIPFS_PATH_CREATABLE:
+    case XIPFS_PATH_UNDEFINED:
         return -ENOENT;
     default:
         return -EIO;
