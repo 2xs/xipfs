@@ -539,14 +539,27 @@ xipfs_open(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     }
 
     /* only these flags are supported */
-#define XIPFS_SUPPORTED_FLAGS \
-(                                             \
-    O_CREAT | O_EXCL | O_WRONLY | O_RDONLY |  \
-    O_RDWR  | O_APPEND                        \
+#define XIPFS_SUPPORTED_FLAGS   \
+(                               \
+    O_CREAT | O_EXCL | O_APPEND \
 )
-    if ((flags & ~XIPFS_SUPPORTED_FLAGS) != 0) {
-        return -EINVAL;
+    const int flags_acc_mode = flags & O_ACCMODE;
+    const int flags_without_acc_mode = flags & (~O_ACCMODE);
+    switch(flags_acc_mode) {
+        case O_RDONLY :
+            /* fallthrough */
+        case O_WRONLY :
+            /* fallthrough */
+        case O_RDWR :
+            if (   ( (flags_without_acc_mode & ~XIPFS_SUPPORTED_FLAGS) != 0 )
+                && ( (flags_without_acc_mode & XIPFS_SUPPORTED_FLAGS)  == 0 ) )
+                return -EINVAL;
+            break;
+        default :
+            // Should not happen
+            return -EINVAL;
     }
+#undef XIPFS_SUPPORTED_FLAGS
 #undef XIPFS_SUPPORTED_FLAGS
     len = strnlen(name, XIPFS_PATH_MAX);
     if (len == XIPFS_PATH_MAX) {
