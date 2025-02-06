@@ -246,7 +246,7 @@ static void *_exec_curr_stack USED;
 /**
  * @brief A pointer to a virtual file name
  */
-char *xipfs_infos_file = ".xipfs_infos";
+char *xipfs_infos_file = "/.xipfs_infos";
 
 /*
  * Helper functions
