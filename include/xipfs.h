@@ -37,11 +37,11 @@
 
 #include <fcntl.h>
 
-#ifndef RIOT_OS
+#ifndef RIOT_VERSION
 
 #include "xipfs_config.h"
 
-#else /* !RIOT_OS */
+#else /* !RIOT_VERSION */
 
 #include "cpu.h"
 
@@ -124,7 +124,7 @@
  */
 #define XIPFS_NVM_PAGE_SIZE (FLASHPAGE_SIZE)
 
-#endif /* !RIOT_OS */
+#endif /* !RIOT_VERSION */
 
 
 #ifndef XIPFS_PATH_MAX
