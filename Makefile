@@ -31,14 +31,14 @@
 #  knowledge of the CeCILL license and that you accept its terms.             #
 ###############################################################################
 
-ifndef RIOT_VERSION
+ifndef RIOT_CFLAGS
 ifeq ("$(wildcard toolchain.mk)","")
     $(error "Run ./configure first")
 endif
 
 include toolchain.mk
 include boards/$(BOARD)/toolchain.mk
-endif # RIOT_VERSION
+endif # RIOT_CFLAGS
 
 CC              = $(PREFIX)gcc
 AR              = $(PREFIX)ar
@@ -55,12 +55,12 @@ CFLAGS         += -Og
 CFLAGS         += -ggdb
 endif
 CFLAGS         += -I.
-ifdef RIOT_VERSION
+ifdef RIOT_CFLAGS
 CFLAGS         += $(RIOT_INCLUDES)
 CFLAGS         += $(RIOT_CFLAGS)
-else # RIOT_VERSION
+else # RIOT_CFLAGS
 CFLAGS         += -Iboards/$(BOARD)
-endif # RIOT_VERSION
+endif # RIOT_CFLAGS
 
 TARGET          = xipfs
 SOURCES         = $(wildcard src/*.c)

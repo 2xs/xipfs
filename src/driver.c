@@ -1007,7 +1007,7 @@ xipfs_mount(xipfs_mount_t *mp)
     end = (int *)((uintptr_t)mp->page_addr + mp->page_num *
         XIPFS_NVM_PAGE_SIZE);
     while (start < end) {
-        if (*start++ != XIPFS_FLASH_ERASE_STATE) {
+        if (*start++ != (int)XIPFS_FLASH_ERASE_STATE) {
             return -EIO;
         }
     }

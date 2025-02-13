@@ -98,7 +98,7 @@ xipfs_fs_head(xipfs_mount_t *mp)
     xipfs_file_t *headp;
 
     headp = mp->page_addr;
-    if ((int)headp->next == XIPFS_FLASH_ERASE_STATE) {
+    if ((int)headp->next == (int)XIPFS_FLASH_ERASE_STATE) {
         /* no file in the file system */
         return NULL;
     }
@@ -141,7 +141,7 @@ xipfs_fs_next(xipfs_file_t *filp)
 
     nextp = filp->next;
 
-    if ((int)nextp->next == XIPFS_FLASH_ERASE_STATE) {
+    if ((int)nextp->next == (int)XIPFS_FLASH_ERASE_STATE) {
         /* no more files - file system not full */
         return NULL;
     }
