@@ -37,7 +37,95 @@
 
 #include <fcntl.h>
 
+#ifndef RIOT_OS
+
 #include "xipfs_config.h"
+
+#else /* !RIOT_OS */
+
+#include "cpu.h"
+
+/**
+ * @def XIPFS_PATH_MAX
+ *
+ * @brief The maximum length of an xipfs path
+ */
+#define XIPFS_PATH_MAX (64)
+
+/**
+ * @def XIPFS_MAGIC
+ *
+ * @brief The magic number of an xipfs file system
+ */
+#define XIPFS_MAGIC (0xf9d3b6cb)
+
+/**
+ * @def XIPFS_FILESIZE_SLOT_MAX
+ *
+ * @brief The maximum slot number for the list holding file
+ * sizes
+ */
+#define XIPFS_FILESIZE_SLOT_MAX (86)
+
+/**
+ * @def XIPFS_EXEC_ARGC_MAX
+ *
+ * @brief The maximum number of arguments on the command line
+ */
+#define XIPFS_EXEC_ARGC_MAX (64)
+
+/**
+ * @def XIPFS_MAX_OPEN_DESC
+ *
+ * @brief The maximum number of opened descriptors
+ */
+#define XIPFS_MAX_OPEN_DESC (16)
+
+
+/**
+ * @def XIPFS_NVM_BASE
+ *
+ * @brief The non-volatile memory base address
+ */
+#define XIPFS_NVM_BASE (CPU_FLASH_BASE)
+
+/**
+ * @def XIPFS_NVM_ERASE_STATE
+ *
+ * @brief The non-volatile memory erased state
+ */
+#define XIPFS_NVM_ERASE_STATE (FLASHPAGE_ERASE_STATE)
+
+/**
+ * @def XIPFS_NVM_NUMOF
+ *
+ * @brief The non-volatile memory flash page number
+ */
+#define XIPFS_NVM_NUMOF (FLASHPAGE_NUMOF)
+
+/**
+ * @def XIPFS_NVM_WRITE_BLOCK_ALIGNMENT
+ *
+ * @brief The write alignment for the non-volatile memory
+ */
+#define XIPFS_NVM_WRITE_BLOCK_ALIGNMENT (FLASHPAGE_WRITE_BLOCK_ALIGNMENT)
+
+/**
+ * @def XIPFS_NVM_WRITE_BLOCK_SIZE
+ *
+ * @brief The write size for the non-volatile memory
+ */
+#define XIPFS_NVM_WRITE_BLOCK_SIZE (FLASHPAGE_WRITE_BLOCK_SIZE)
+
+/**
+ * @def XIPFS_NVM_PAGE_SIZE
+ *
+ * @brief The non-volatile memory flash page size
+ */
+#define XIPFS_NVM_PAGE_SIZE (FLASHPAGE_SIZE)
+
+#endif /* !RIOT_OS */
+
 
 #ifndef XIPFS_PATH_MAX
 #error "xipfs_config.h: XIPFS_PATH_MAX undefined"
