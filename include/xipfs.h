@@ -44,6 +44,7 @@
 #else /* !RIOT_VERSION */
 
 #include "cpu.h"
+#include "periph/flashpage.h"
 
 /**
  * @def XIPFS_PATH_MAX
