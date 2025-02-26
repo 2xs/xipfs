@@ -170,91 +170,6 @@ basename(char *base, const char *path)
 /**
  * @internal
  *
- * @pre dirp must be a pointer that references an accessible
- * memory region
- *
- * @pre dirp->mp must be a pointer that references a memory
- * region containing an xipfs mount point structure which is
- * accessible and valid
- *
- * @pre filp must be a pointer that references an accessible
- * memory region
- *
- * @pre n must be less than XIPFS_PATH_MAX
- *
- * @brief Verify whether the path from index n of the file
- * specified by filp in the open directory structure specified
- * by dirp has already been displayed
- *
- * @param dirp A pointer to a memory region containing an
- * accessible open directory structure
- *
- * @param dirp A pointer to a memory region containing an
- * accessible xipfs file structure
- *
- * @param n The The index of the last character in the path
- * prefix
- *
- * @return Returns zero if the path is already displayed, or a
- * negative value otherwise
- */
-static int
-already_display(xipfs_mount_t *mp, xipfs_file_t *filp, size_t n)
-{
-    xipfs_file_t *curp;
-    size_t i;
-
-    assert(mp != NULL);
-    assert(filp != NULL);
-    assert(n < XIPFS_PATH_MAX);
-
-    if ((curp = xipfs_fs_head(mp)) != NULL) {
-        /* one file at least */
-        do {
-            if (curp == filp) {
-                /* not already display */
-                break;
-            }
-            i = 0;
-            while (i < n) {
-                /* compare curp and filp prefix */
-                if (curp->path[i] != filp->path[i]) {
-                    break;
-                }
-                i++;
-            }
-            /* skip files with wrong prefix */
-            if (i == n) {
-                /* curp and filp share a prefix */
-                while (i < XIPFS_PATH_MAX    &&
-                       curp->path[i] == '\0' &&
-                       filp->path[i] == '\0' &&
-                       curp->path[i] == '/'  &&
-                       filp->path[i] == '/'  &&
-                       curp->path[i] != filp->path[i]) {
-                    /* compare curp and filp until a slash, null
-                     * character, or differing character */
-                    i++;
-                }
-                if (i == XIPFS_PATH_MAX) {
-                    /* path too long */
-                    return -1;
-                }
-                if (curp->path[i] == filp->path[i]) {
-                    /* already display */
-                    return 0;
-                }
-            }
-        } while ((curp = xipfs_fs_next(curp)) != NULL);
-    }
-
-    /* not already display */
-    return -1;
-}
-
-/**
- * @internal
- *
  * @pre xipfs_mp must be a pointer that references a memory
  * region containing an xipfs mount point structure which is
  * accessible and valid
@@ -900,33 +815,31 @@ xipfs_readdir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp,
                 /* skip first slash */
                 i++;
             }
-            if (already_display(mp, descp->filp, i) < 0) {
-                j = i;
-                while (j < XIPFS_PATH_MAX) {
-                    if (descp->filp->path[j] == '\0') {
-                        direntp->dirname[j-i] = '\0';
-                        break;
-                    }
-                    if (descp->filp->path[j] == '/') {
-                        direntp->dirname[j-i] = '/';
-                        direntp->dirname[j-i+1] = '\0';
-                        break;
-                    }
-                    direntp->dirname[j-i] = descp->filp->path[j];
-                    j++;
+            j = i;
+            while (j < XIPFS_PATH_MAX) {
+                if (descp->filp->path[j] == '\0') {
+                    direntp->dirname[j-i] = '\0';
+                    break;
                 }
-                if (j == XIPFS_PATH_MAX) {
-                    return -ENAMETOOLONG;
+                if (descp->filp->path[j] == '/') {
+                    direntp->dirname[j-i] = '/';
+                    direntp->dirname[j-i+1] = '\0';
+                    break;
                 }
-                /* set the next file to the structure */
-                if ((descp->filp = xipfs_fs_next(descp->filp)) == NULL) {
-                    if (xipfs_errno != XIPFS_OK) {
-                        return -EIO;
-                    }
-                }
-                /* entry was updated */
-                return 1;
+                direntp->dirname[j-i] = descp->filp->path[j];
+                j++;
             }
+            if (j == XIPFS_PATH_MAX) {
+                return -ENAMETOOLONG;
+            }
+            /* set the next file to the structure */
+            if ((descp->filp = xipfs_fs_next(descp->filp)) == NULL) {
+                if (xipfs_errno != XIPFS_OK) {
+                    return -EIO;
+                }
+            }
+            /* entry was updated */
+            return 1;
         }
         descp->filp = xipfs_fs_next(descp->filp);
     }
