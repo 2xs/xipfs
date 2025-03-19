@@ -75,7 +75,7 @@ typedef struct xipfs_buf_s {
     /**
      * The I/O buffer
      */
-    char buf[XIPFS_NVM_PAGE_SIZE];
+    char buf[XIPFS_NVM_PAGE_SIZE] __attribute__ ((aligned(FLASHPAGE_WRITE_BLOCK_ALIGNMENT)));
     /**
      * The flash page number loaded into the I/O buffer
      */
@@ -151,28 +151,18 @@ xipfs_buffer_need_flush(void)
 int
 xipfs_buffer_flush(void)
 {
-    void *src, *dest;
-    unsigned num;
-    size_t len;
 
     if (xipfs_buffer_need_flush() == 0) {
         /* no need to flush the buffer */
         return 0;
     }
 
-    num = xipfs_buf.page_num;
-
-    if (xipfs_flash_erase_page(num) < 0) {
+    if (xipfs_flash_erase_page(xipfs_buf.page_num) < 0) {
         /* xipfs_errno was set */
         return -1;
     }
 
-    src = xipfs_buf.buf;
-    dest = xipfs_buf.page_addr;
-    len = XIPFS_NVM_PAGE_SIZE;
-
-    if (xipfs_flash_write_unaligned(dest, src, len) < 0) {
-        /* xipfs_errno was set */
+    if(flashpage_write_and_verify(xipfs_buf.page_num, xipfs_buf.buf) != FLASHPAGE_OK) {
         return -1;
     }
 
