@@ -61,7 +61,7 @@
  * @brief Amount of free RAM available for the relocatable
  * binary to use
  */
-#define XIPFS_FREE_RAM_SIZE (512)
+#define XIPFS_FREE_RAM_SIZE (4096)
 
 /**
  * @internal
