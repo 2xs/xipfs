@@ -36,6 +36,7 @@
 #define XIPFS_H
 
 #include <fcntl.h>
+#include <stdarg.h>
 
 #ifndef RIOT_VERSION
 
