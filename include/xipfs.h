@@ -59,7 +59,7 @@
  *
  * @brief The magic number of an xipfs file system
  */
-#define XIPFS_MAGIC (0xf9d3b6cb)
+#define XIPFS_MAGIC (0xf9d3b6cbUL)
 
 /**
  * @def XIPFS_FILESIZE_SLOT_MAX
