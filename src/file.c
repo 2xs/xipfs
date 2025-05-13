@@ -352,6 +352,22 @@ exec_ctx_args_init(exec_ctx_t *ctx, char *const argv[])
 }
 
 /**
+ * @brief An enumeration describing the index of xipfs functions.
+ *
+ * @warning MUST REMAIN SYNCHRONIZED with xipfs_format stdriot's one.
+ */
+typedef enum xipfs_syscall_e {
+    XIPFS_SYSCALL_EXIT,
+    XIPFS_SYSCALL_MAX
+} xipfs_syscall_t;
+
+typedef int (*xipfs_syscall_exit_t)(int status);
+
+const void *xipfs_syscall_table[XIPFS_SYSCALL_MAX] = {
+    [XIPFS_SYSCALL_EXIT] = xipfs_exec_exit
+};
+
+/**
  * @internal
  *
  * @brief Sets the syscalls table in execution context.
