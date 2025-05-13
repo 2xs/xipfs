@@ -44,7 +44,8 @@ extern "C" {
 extern char *xipfs_infos_file;
 
 int xipfs_file_erase(xipfs_file_t *filp);
-int xipfs_file_exec(xipfs_file_t *filp, char *const argv[]);
+int xipfs_file_exec(xipfs_file_t *filp, char *const argv[],
+                    const void *user_syscalls[XIPFS_USER_SYSCALL_MAX]);
 int xipfs_file_filp_check(xipfs_file_t *filp);
 off_t xipfs_file_get_max_pos(xipfs_file_t *filp);
 off_t xipfs_file_get_reserved(xipfs_file_t *filp);

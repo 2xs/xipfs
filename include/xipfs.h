@@ -309,7 +309,44 @@ void xipfs_nvm_write(void *target_addr, const void *data, size_t len);
 
 int xipfs_close(xipfs_mount_t *mp, xipfs_file_desc_t *descp);
 int xipfs_closedir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp);
-int xipfs_execv(xipfs_mount_t *mp, const char *full_path, char *const argv[]);
+
+/**
+ * @warning The order of the members in the enumeration must
+ * remain synchronized with the order of the members of the same
+ * enumeration declared in caller site (xipfs_format stdriot's one).
+ *
+ * @brief An enumeration describing the index of functions.
+ * @see xipfs_execv
+ */
+typedef enum xipfs_user_syscall_e {
+    XIPFS_USER_SYSCALL_PRINTF,
+    XIPFS_USER_SYSCALL_GET_TEMP,
+    XIPFS_USER_SYSCALL_ISPRINT,
+    XIPFS_USER_SYSCALL_STRTOL,
+    XIPFS_USER_SYSCALL_GET_LED,
+    XIPFS_USER_SYSCALL_SET_LED,
+    XIPFS_USER_SYSCALL_COPY_FILE,
+    XIPFS_USER_SYSCALL_GET_FILE_SIZE,
+    XIPFS_USER_SYSCALL_MEMSET,
+    XIPFS_USER_SYSCALL_MAX
+} xipfs_user_syscall_t;
+
+typedef int (*xipfs_user_syscall_vprintf_t)(const char *format, va_list ap);
+typedef int (*xipfs_user_syscall_get_temp_t)(void);
+typedef int (*xipfs_user_syscall_isprint_t)(int character);
+typedef long (*xipfs_user_syscall_strtol_t)(
+    const char *str, char **endptr, int base);
+typedef int (*xipfs_user_syscall_get_led_t)(int pos);
+typedef int (*xipfs_user_syscall_set_led_t)(int pos, int val);
+typedef ssize_t (*xipfs_user_syscall_copy_file_t)(
+    const char *name, void *buf, size_t nbyte);
+typedef int (*xipfs_user_syscall_get_file_size_t)(
+    const char *name, size_t *size);
+typedef void *(*syscall_memset_t)(void *m, int c, size_t n);
+
+int xipfs_execv(xipfs_mount_t *mp, const char *full_path, char *const argv[],
+                const void *user_syscalls[XIPFS_USER_SYSCALL_MAX]);
+
 int xipfs_format(xipfs_mount_t *mp);
 int xipfs_fstat(xipfs_mount_t *mp, xipfs_file_desc_t *descp, struct stat *buf);
 int xipfs_fsync(xipfs_mount_t *mp, xipfs_file_desc_t *descp, off_t pos);

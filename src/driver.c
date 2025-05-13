@@ -1519,7 +1519,8 @@ xipfs_new_file(xipfs_mount_t *mp, const char *path,
 
 int
 xipfs_execv(xipfs_mount_t *mp, const char *path,
-            char *const argv[])
+            char *const argv[],
+            const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
 {
     xipfs_path_t xipath;
     size_t len;
@@ -1543,6 +1544,13 @@ xipfs_execv(xipfs_mount_t *mp, const char *path,
     }
     if (argv == NULL) {
         return -EFAULT;
+    }
+    if(user_syscalls == NULL)
+        return -EFAULT;
+    for(int i = 0; i < XIPFS_USER_SYSCALL_MAX; ++i) {
+        if (user_syscalls[i] == NULL) {
+            return -EFAULT;
+        }
     }
 
     if (xipfs_path_new(mp, &xipath, path) < 0) {
@@ -1572,7 +1580,7 @@ xipfs_execv(xipfs_mount_t *mp, const char *path,
         return -EINVAL;
     }
 
-    if ((ret = xipfs_file_exec(xipath.witness, argv)) < 0) {
+    if ((ret = xipfs_file_exec(xipath.witness, argv, user_syscalls)) < 0) {
         return -EIO;
     }
 

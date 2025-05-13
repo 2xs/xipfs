@@ -112,34 +112,6 @@
 /**
  * @internal
  *
- * @warning The order of the members in the enumeration must
- * remain synchronized with the order of the members of the same
- * enumeration declared in file
- * examples/xipfs/hello-world/stdriot/stdriot.c
- *
- * @brief An enumeration describing the index of the functions
- * of the libc and RIOT in the system call table
- */
-enum syscall_index_e {
-    /**
-     * Index of exit(3)
-     */
-    SYSCALL_EXIT,
-    /**
-     * Index of printf(3)
-     */
-    SYSCALL_PRINTF,
-    /**
-     * Maximum size of the syscall table used by the relocatable
-     * binary. It must remain the final element of the
-     * enumeration
-     */
-    SYSCALL_MAX,
-};
-
-/**
- * @internal
- *
  * @brief Data structure that describes the memory layout
  * required by the CRT0 to execute the relocatable binary
  */
@@ -169,10 +141,8 @@ typedef struct crt0_ctx_s {
 /**
  * @internal
  *
- * @warning If a member of this data structure is added, removed,
- * or moved, the OFFSET variable in the script
- * example/xipfs/hello-world/scripts/gdbinit.py needs to be
- * updated accordingly
+ * @warning When modifying the structure here, please modify
+ * also the structure declaration in xipfs_format/stdriot/stdriot.c.
  *
  * @brief Data structure that describes the execution context of
  * a relocatable binary
@@ -201,10 +171,17 @@ typedef struct exec_ctx_s {
      */
     char *argv[XIPFS_EXEC_ARGC_MAX];
     /**
-     * Table of function pointers for the libc and RIOT
-     * functions used by the relocatable binary
+     * Table of function pointers for functions
+     * used by xipfs_format's CRT0 and/or stdriot.
+     * These functions are not meant to be shared with
+     * end users.
      */
-    void *syscall_table[SYSCALL_MAX];
+    const void **xipfs_syscall_table;
+    /**
+     * Table of function pointers for the RIOT functions
+     * used by the relocatable binary
+     */
+    const void **user_syscall_table;
     /**
      * Reserved memory space in RAM for the free RAM to be used
      * by the relocatable binary
@@ -377,17 +354,22 @@ exec_ctx_args_init(exec_ctx_t *ctx, char *const argv[])
 /**
  * @internal
  *
- * @brief Fills the syscall table with libc and RIOT function
- * addresses
+ * @brief Sets the syscalls table in execution context.
+ *
+ * This function also sets both SYSCALL_EXIT and SYSCALL_PRINTF
+ * table entries.
  *
  * @param ctx A pointer to a memory region containing an
  * accessible execution context
+ *
+ * @see syscall_index_t.
  */
 static inline void
-exec_ctx_syscall_init(exec_ctx_t *ctx)
+exec_ctx_syscall_init(exec_ctx_t *ctx,
+                      const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
 {
-    ctx->syscall_table[SYSCALL_EXIT] = xipfs_exec_exit;
-    ctx->syscall_table[SYSCALL_PRINTF] = vprintf;
+    ctx->xipfs_syscall_table = xipfs_syscall_table;
+    ctx->user_syscall_table  = user_syscalls;
 }
 
 /**
@@ -397,11 +379,12 @@ exec_ctx_syscall_init(exec_ctx_t *ctx)
  */
 static inline void
 exec_ctx_init(exec_ctx_t *exec_ctx, xipfs_file_t *filp,
-              char *const argv[])
+              char *const argv[],
+              const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
 {
     exec_ctx_crt0_init(exec_ctx, filp);
     exec_ctx_args_init(exec_ctx, argv);
-    exec_ctx_syscall_init(exec_ctx);
+    exec_ctx_syscall_init(exec_ctx, user_syscalls);
 }
 
 /*
@@ -876,11 +859,15 @@ xipfs_file_write_8(xipfs_file_t *filp, off_t pos, char byte)
  * @param argv A pointer to a list of pointers to memory regions
  * containing accessible arguments to pass to the binary
  *
+ * @param syscalls A pointer to a list of pointers defining a syscalls
+ * table as stated by syscall_index_t.
+ *
  * @return Returns zero if the function succeed or a negative
  * value otherwise
  */
 int
-xipfs_file_exec(xipfs_file_t *filp, char *const argv[])
+xipfs_file_exec(xipfs_file_t *filp, char *const argv[],
+                const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
 {
     if (xipfs_file_filp_check(filp) < 0) {
         /* xipfs_errno was set */
@@ -888,7 +875,7 @@ xipfs_file_exec(xipfs_file_t *filp, char *const argv[])
     }
 
     exec_ctx_cleanup(&exec_ctx);
-    exec_ctx_init(&exec_ctx, filp, argv);
+    exec_ctx_init(&exec_ctx, filp, argv, user_syscalls);
     _exec_entry_point = thumb(&filp->buf[0]);
     xipfs_exec_enter(&exec_ctx.crt0_ctx, filp->buf, exec_ctx.stktop);
 
