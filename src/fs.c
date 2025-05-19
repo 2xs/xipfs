@@ -339,7 +339,7 @@ xipfs_fs_new_file(xipfs_mount_t *mp, const char *path, size_t size,
     }
 
     if (size > 0) {
-        reserved = ROUND(size, XIPFS_NVM_PAGE_SIZE);
+        reserved = ROUND(size + sizeof(xipfs_file_t), XIPFS_NVM_PAGE_SIZE);
     } else {
         reserved = XIPFS_NVM_PAGE_SIZE;
     }

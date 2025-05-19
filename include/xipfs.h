@@ -46,6 +46,7 @@
 
 #include "cpu.h"
 #include "periph/flashpage.h"
+#include "mutex.h"
 
 /**
  * @def XIPFS_PATH_MAX
@@ -215,6 +216,8 @@ typedef struct xipfs_mount_s {
     const char *mount_path;
     size_t page_num;
     void *page_addr;
+    mutex_t *execution_mutex;
+    mutex_t *mutex;
 } xipfs_mount_t;
 
 typedef struct xipfs_dir_desc_s {
