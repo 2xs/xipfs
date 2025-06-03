@@ -245,7 +245,8 @@ xipfs_exec_exit(int status UNUSED)
     __asm__ volatile
     (
         "   ldr   r4, =_exec_curr_stack   \n"
-        "   ldr   sp, [r4]                \n"
+        "   ldr   r4, [r4]                \n"
+        "   mov   sp, r4                  \n"
         "   pop   {r4, pc}                \n"
     );
 }
@@ -266,7 +267,8 @@ xipfs_exec_enter(crt0_ctx_t *crt0_ctx UNUSED,
     (
         "   push   {r4, lr}               \n"
         "   ldr    r4, =_exec_curr_stack  \n"
-        "   str    sp, [r4]               \n"
+        "   mov    r0, sp                 \n"
+        "   str    r0, [r4]               \n"
         "   ldr    r0, =exec_ctx          \n"
         "   add    r4, r0, #1040          \n"
         "   mov    sp, r4                 \n"
