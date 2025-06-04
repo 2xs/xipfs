@@ -47,6 +47,7 @@ CFLAGS          = -Wall
 CFLAGS         += -Wextra
 CFLAGS         += -Werror
 CFLAGS         += -ffreestanding
+CFLAGS         += -mthumb
 CFLAGS         += $(BOARD_CFLAGS)
 ifndef DEBUG
 CFLAGS         += -Os

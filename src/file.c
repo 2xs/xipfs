@@ -270,7 +270,8 @@ xipfs_exec_enter(crt0_ctx_t *crt0_ctx UNUSED,
         "   mov    r0, sp                 \n"
         "   str    r0, [r4]               \n"
         "   ldr    r0, =exec_ctx          \n"
-        "   add    r4, r0, #1040          \n"
+        "   ldr    r4, =0x410             \n" // == 1040 == (5*4) + 1020 == ctr0_ctx + stkbot == stktop
+        "   add    r4, r0, r4             \n"
         "   mov    sp, r4                 \n"
         "   ldr    r4, =_exec_entry_point \n"
         "   ldr    r4, [r4]               \n"
