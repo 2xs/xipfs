@@ -67,18 +67,26 @@ TARGET          = xipfs
 SOURCES         = $(wildcard src/*.c)
 OBJECTS         = $(SOURCES:.c=.o)
 
-all: $(TARGET).a
+OBJS = $(addprefix $(BOARD)/,$(OBJECTS))
 
-$(TARGET).a: $(OBJECTS)
+all: $(BOARD)/$(TARGET).a
+
+$(BOARD)/src:
+	mkdir -p $(BOARD)/src
+
+$(BOARD)/src/%.c: src/%.c $(BOARD)/src
+	cp $< $@
+
+$(BOARD)/$(TARGET).a: $(OBJS)
 	$(AR) rcs $@ $^
 
-%.o: %.c
+$(BOARD)/src/%.o: $(BOARD)/src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 realclean: clean
-	$(RM) $(TARGET).a
+	$(RM) -rf $(BOARD)
 
 clean:
-	$(RM) $(OBJECTS)
+	$(RM) $(BOARD)/$(OBJECTS)
 
 .PHONY: all realclean clean
