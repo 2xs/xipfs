@@ -207,14 +207,6 @@ static exec_ctx_t exec_ctx;
 /**
  * @internal
  *
- * @brief A pointer to the first instruction to execute in the
- * relocatable binary
- */
-static void *_exec_entry_point USED;
-
-/**
- * @internal
- *
  * @brief A reference to the stack's state prior to invoking
  * execv(2)
  */
@@ -881,6 +873,8 @@ int
 xipfs_file_exec(xipfs_file_t *filp, char *const argv[],
                 const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
 {
+    void *exec_entry_point;
+
     if (xipfs_file_filp_check(filp) < 0) {
         /* xipfs_errno was set */
         return -1;
@@ -888,8 +882,8 @@ xipfs_file_exec(xipfs_file_t *filp, char *const argv[],
 
     exec_ctx_cleanup(&exec_ctx);
     exec_ctx_init(&exec_ctx, filp, argv, user_syscalls);
-    _exec_entry_point = thumb(&filp->buf[0]);
-    xipfs_exec_enter(&exec_ctx.crt0_ctx, _exec_entry_point, exec_ctx.stktop);
+    exec_entry_point = thumb(&filp->buf[0]);
+    xipfs_exec_enter(&exec_ctx.crt0_ctx, exec_entry_point, exec_ctx.stktop);
 
     return 0;
 }
