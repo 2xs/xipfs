@@ -244,10 +244,9 @@ xipfs_exec_exit(int status UNUSED)
 {
     __asm__ volatile
     (
-        "   ldr   r4, =_exec_curr_stack   \n"
-        "   ldr   r4, [r4]                \n"
-        "   mov   sp, r4                  \n"
-        "   pop   {r4, pc}                \n"
+        " ldr r4, =_exec_curr_stack \n"
+        " ldr sp, [r4]              \n"
+        " pop {r4, pc}              \n"
     );
 }
 
@@ -265,17 +264,11 @@ xipfs_exec_enter(crt0_ctx_t *crt0_ctx UNUSED,
 {
     __asm__ volatile
     (
-        "   push   {r4, lr}               \n"
-        "   ldr    r4, =_exec_curr_stack  \n"
-        "   mov    r0, sp                 \n"
-        "   str    r0, [r4]               \n"
-        "   ldr    r0, =exec_ctx          \n"
-        "   ldr    r4, =0x410             \n" // == 1040 == (5*4) + 1020 == ctr0_ctx + stkbot == stktop
-        "   add    r4, r0, r4             \n"
-        "   mov    sp, r4                 \n"
-        "   ldr    r4, =_exec_entry_point \n"
-        "   ldr    r4, [r4]               \n"
-        "   blx    r4                     \n"
+        " push {r4, lr}             \n"
+        " ldr r4, =_exec_curr_stack \n"
+        " str sp, [r4]              \n"
+        " mov sp, r2                \n"
+        " blx r1                    \n"
     );
 }
 
@@ -896,7 +889,7 @@ xipfs_file_exec(xipfs_file_t *filp, char *const argv[],
     exec_ctx_cleanup(&exec_ctx);
     exec_ctx_init(&exec_ctx, filp, argv, user_syscalls);
     _exec_entry_point = thumb(&filp->buf[0]);
-    xipfs_exec_enter(&exec_ctx.crt0_ctx, filp->buf, exec_ctx.stktop);
+    xipfs_exec_enter(&exec_ctx.crt0_ctx, _exec_entry_point, exec_ctx.stktop);
 
     return 0;
 }
