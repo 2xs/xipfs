@@ -84,6 +84,24 @@
  */
 #define XIPFS_MAX_OPEN_DESC (16)
 
+#ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
+
+/**
+ * @def XIPFS_ENTER_SVC_NUMBER
+ *
+ * @brief The svc number of the xipfs exec enter
+ */
+#   define XIPFS_ENTER_SVC_NUMBER   2
+
+/**
+ * @def XIPFS_SYSCALL_SVC_NUMBER
+ *
+ * @brief The svc number of the xipfs syscalls dispatcher
+ */
+#   define XIPFS_SYSCALL_SVC_NUMBER 3
+
+#endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
+
 
 /**
  * @def XIPFS_NVM_BASE
@@ -346,10 +364,12 @@ typedef ssize_t (*xipfs_user_syscall_copy_file_t)(
     const char *name, void *buf, size_t nbyte);
 typedef int (*xipfs_user_syscall_get_file_size_t)(
     const char *name, size_t *size);
-typedef void *(*syscall_memset_t)(void *m, int c, size_t n);
+typedef void *(*xipsf_user_syscall_memset_t)(void *m, int c, size_t n);
 
 int xipfs_execv(xipfs_mount_t *mp, const char *full_path, char *const argv[],
                 const void *user_syscalls[XIPFS_USER_SYSCALL_MAX]);
+int xipfs_safe_execv(xipfs_mount_t *mp, const char *full_path, char *const argv[],
+                     const void *user_syscalls[XIPFS_USER_SYSCALL_MAX]);
 
 int xipfs_format(xipfs_mount_t *mp);
 int xipfs_fstat(xipfs_mount_t *mp, xipfs_file_desc_t *descp, struct stat *buf);
@@ -369,6 +389,56 @@ int xipfs_statvfs(xipfs_mount_t *mp, const char *restrict path, struct xipfs_sta
 int xipfs_umount(xipfs_mount_t *mp);
 int xipfs_unlink(xipfs_mount_t *mp, const char *name);
 ssize_t xipfs_write(xipfs_mount_t *mp, xipfs_file_desc_t *descp, const void *src, size_t nbytes);
+
+#ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
+
+/**
+ * @pre This function is called by the mem_manage_default function
+ * in RIOT/cpu/cortexm_common/vectors_cortexm.c
+ *
+ * @brief Manage MPU faults and dynamically allocate flashpages
+ *
+ * @param isr_frame_ptr The pointer to the exception stack frame
+ *
+ * @param mmfar The faulting address (can be invalid if the MARVALID bit of cfsr is not set)
+ *
+ * @param cfsr The Configurable Fault Status Register
+ *
+ * @return Zero on success, or a negative number on failure
+ */
+int xipfs_mem_manage_handler(void *isr_frame_ptr, uint32_t mmfar, uint32_t cfsr);
+
+/**
+ * @pre Must be in handler mode to use the function, otherwise an hard fault
+ * will occur on context switch.
+ *
+ * @pre This function is called by the _svc_dispatch function in
+ * RIOT/cpu/cortexm_common/thread_arch.c.
+ *
+ * @brief Prepare the exception stack frame to switch to
+ * user mode and execute the binary safely, called from an svc interruption
+ *
+ * @param crt0 A pointer to the crt0 context to execute the binary
+ *
+ * @param entrypoint A pointer to the entrypoint of the binary
+ *
+ * @param stack A pointer to the top of the binary's stack
+ */
+void xipfs_safe_exec_enter(void *crt0_ctx, void *entrypoint, void *stack);
+
+/**
+ * @pre The function must not be used outside of SVC calls,
+ * this function is called by the _svc_dispatch function
+ * in RIOT/cpu/cortexm_common/thread_arch.c
+ *
+ * @brief Dispatch syscalls made by the executed binary.
+ *
+ * @param svc_args An array containing the arguments of the syscall,
+ * the first one is the syscall number used to dispatch.
+ */
+int xipfs_syscall_dispatcher(unsigned int *svc_args);
+
+#endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
 
 #ifdef __cplusplus
 }

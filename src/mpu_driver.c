@@ -32,135 +32,58 @@
 /*  knowledge of the CeCILL license and that you accept its terms.             */
 /*******************************************************************************/
 
-#ifndef XIPFS_ERRNO_H
-#define XIPFS_ERRNO_H
+#include "include/mpu_driver.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/**
- * @brief A enumration of all xipfs error numbers
- */
-enum xipfs_errno_e {
-    /**
-     * No error
-     */
-    XIPFS_OK,
-    /**
-     * Path is null
-     */
-    XIPFS_ENULLP,
-    /**
-     * Path is empty
-     */
-    XIPFS_EEMPTY,
-    /**
-     * Invalid character
-     */
-    XIPFS_EINVAL,
-    /**
-     * Path is not null-terminated
-     */
-    XIPFS_ENULTER,
-    /**
-     * File pointer is null
-     */
-    XIPFS_ENULLF,
-    /**
-     * File is not page-aligned
-     */
-    XIPFS_EALIGN,
-    /**
-     * File is outside NVM space
-     */
-    XIPFS_EOUTNVM,
-    /**
-     * File improperly linked to others
-     */
-    XIPFS_ELINK,
-    /**
-     * Offset exceeds max position
-     */
-    XIPFS_EMAXOFF,
-    /**
-     * NVMC error
-     */
-    XIPFS_ENVMC,
-    /**
-     * Mount point is null
-     */
-    XIPFS_ENULLM,
-    /**
-     * Bad magic number
-     */
-    XIPFS_EMAGIC,
-    /**
-     * Bad page number
-     */
-    XIPFS_EPAGNUM,
-    /**
-     * File system full
-     */
-    XIPFS_EFULL,
-    /**
-     * File already exists
-     */
-    XIPFS_EEXIST,
-    /**
-     * File has wrong permissions
-     */
-    XIPFS_EPERM,
-    /**
-     * Insufficient space to create the file
-     */
-    XIPFS_ENOSPACE,
+int xipfs_mpu_configure_region(
+    xipfs_mpu_region_enum_t mpu_region, void *address, uint32_t size,
+    xipfs_mpu_region_xn_enum_t xn, xipfs_mpu_region_ap_enum_t ap) {
 
 #ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
 
-    /**
-     * Failed to set text MPU region
-     */
-    XIPFS_ETEXTREGION,
+    if (   (mpu_region < XIPFS_MPU_REGION_ENUM_FIRST)
+        || (mpu_region > XIPFS_MPU_REGION_ENUM_LAST)) {
+        return -1;
+    }
 
-    /**
-     * Failed to set data MPU region
-     */
-    XIPFS_EDATAREGION,
+    if (   (xn < XIPFS_MPU_REGION_EXC_FIRST)
+        || (xn > XIPFS_MPU_REGION_EXC_LAST)) {
+        return -1;
+    }
 
-    /**
-     * Failed to set stack MPU region
-     */
-    XIPFS_ESTACKREGION,
+    if (   (ap < XIPFS_MPU_REGION_AP_FIRST)
+        || (ap > XIPFS_MPU_REGION_AP_LAST)
+        || (ap == MPU_REGION_AP_RESERVED)) {
+        return -1;
+    }
 
-    /**
-     * Failed to enable MPU
-     */
-    XIPFS_EENABLEMPU,
+    if ((size < 32) || (is_power_of_two(size) == false)) {
+        return -1;
+    }
 
-    /**
-     * Failed to disable MPU
+    if (((uintptr_t)address) % size != 0) {
+        return -1;
+    }
+
+    uint32_t log2_size = log2Integer(size) - 1;
+
+    /*
+     * @see ARMv7-M Architecture Reference Manual,
+     * B3.5.9 MPU Region Attribute and Size Register, MPU_RASR
      */
-    XIPFS_EDISABLEMPU,
+    uint32_t attributes =
+        (((uint32_t)xn) << 28)  |
+        (((uint32_t)ap) << 24)  |
+        (0  << 19)  |
+        (1  << 18)  |
+        (0  << 17)  |
+        (1  << 16)  |
+        (log2_size << 1);
+
+    return mpu_configure(mpu_region,(uintptr_t)address, attributes);
+
+#else /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
+
+    return -1;
 
 #endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
-    /**
-     * Files were compiled with no XIPFS_ENABLE_SAFE_EXEC_SUPPORT defined.
-     */
-    XIPFS_NOSAFESUPPORT,
-
-    /**
-     * Error number - must be the last element
-     */
-    XIPFS_ENUM,
-};
-
-extern int xipfs_errno;
-
-const char *xipfs_strerror(int errnum);
-
-#ifdef __cplusplus
 }
-#endif
-
-#endif /* XIPFS_ERRNO_H */
