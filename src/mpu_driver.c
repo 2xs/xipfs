@@ -34,6 +34,26 @@
 
 #include "include/mpu_driver.h"
 
+#ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
+
+/* https://graphics.stanford.edu/~seander/bithacks.html#DetermineIfPowerOf2 */
+static bool is_power_of_two(uint32_t v) {
+    return v && !(v & (v - 1));
+}
+
+/* https://graphics.stanford.edu/~seander/bithacks.html#IntegerLog */
+static uint32_t log2Integer(uint32_t v) {
+    uint32_t result = (v & 0xAAAAAAAA) != 0;
+    result |= ((v & 0xFFFF0000) != 0) << 4;
+    result |= ((v & 0xFF00FF00) != 0) << 3;
+    result |= ((v & 0xF0F0F0F0) != 0) << 2;
+    result |= ((v & 0xCCCCCCCC) != 0) << 1;
+
+    return result;
+}
+
+#endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
+
 int xipfs_mpu_configure_region(
     xipfs_mpu_region_enum_t mpu_region, void *address, uint32_t size,
     xipfs_mpu_region_xn_enum_t xn, xipfs_mpu_region_ap_enum_t ap) {
@@ -82,6 +102,11 @@ int xipfs_mpu_configure_region(
     return mpu_configure(mpu_region,(uintptr_t)address, attributes);
 
 #else /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
+    (void)mpu_region;
+    (void)address;
+    (void)size;
+    (void)xn;
+    (void)ap;
 
     return -1;
 

@@ -1552,7 +1552,7 @@ xipfs_execv_check(xipfs_mount_t *mp, const char *path,
         }
     }
 
-    if (xipfs_path_new(mp, &xipath, path) < 0) {
+    if (xipfs_path_new(mp, xipath, path) < 0) {
         return -EIO;
     }
     switch (xipath.info) {
@@ -1570,7 +1570,7 @@ xipfs_execv_check(xipfs_mount_t *mp, const char *path,
         return -EIO;
     }
 
-    switch (xipath.witness->exec) {
+    switch (xipath->witness->exec) {
     case 0:
         return -EACCES;
     case 1:

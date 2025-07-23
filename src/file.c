@@ -476,7 +476,7 @@ exec_ctx_args_init(exec_ctx_t *ctx, char *const argv[])
  */
 typedef enum xipfs_syscall_e {
     XIPFS_SYSCALL_EXIT = XIPFS_USER_SYSCALL_MAX,
-    XIPFS_SYSCALL_MAX
+    XIPFS_SYSCALL_MAX,
 
     XIPFS_SYSCALL_FIRST = XIPFS_SYSCALL_EXIT,
     XIPFS_SYSCALL_LAST  = XIPFS_SYSCALL_MAX,
@@ -1261,7 +1261,10 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
 
     return status;
 #else /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
-    errno = XIPFS_NOSAFESUPPORT;
+    (void)filp;
+    (void)argv;
+    (void)user_syscalls;
+    xipfs_errno = XIPFS_NOSAFESUPPORT;
     return -1;
 #endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
 }

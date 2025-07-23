@@ -107,6 +107,8 @@ extern int xipfs_mpu_configure_region(
     xipfs_mpu_region_enum_t mpu_region, void *address, uint32_t size,
     xipfs_mpu_region_xn_enum_t xn, xipfs_mpu_region_ap_enum_t ap);
 
+#ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
+
 /**
  * Functions to be defined by OS host
  */
@@ -146,6 +148,8 @@ extern bool mpu_enabled(void);
  * @return <0 on failure or no MPU present
  */
 extern int mpu_configure(uint_fast8_t region, uintptr_t base, uint_fast32_t attr);
+
+#endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
 
 #ifdef __cplusplus
 }
