@@ -332,17 +332,17 @@ char *xipfs_infos_file = "/.xipfs_infos";
 /**
  * The mpu region identifier used to protect Text segment
  */
-static mpu_region_enum_t mpu_region_current_text;
+static xipfs_mpu_region_enum_t mpu_region_current_text;
 
 /**
  * The mpu region identifier used to protect Data segment
  */
-static mpu_region_enum_t mpu_region_current_data;
+static xipfs_mpu_region_enum_t mpu_region_current_data;
 
 /**
  * The mpu region identifier used to protect Stack segment
  */
-static mpu_region_enum_t mpu_region_current_stack;
+static xipfs_mpu_region_enum_t mpu_region_current_stack;
 
 #endif
 
@@ -1147,9 +1147,9 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
 
     /* Check exec_ctx member alignments */
     if (!(
-              (uint32_t)exec_ctx->stkbot % EXEC_STACKSIZE_DEFAULT == 0
-           && (uint32_t)exec_ctx->ram_start % XIPFS_FREE_RAM_SIZE == 0
-           && (uint32_t)exec_ctx->crt0_ctx.file_base % XIPFS_NVM_PAGE_SIZE == 0
+              ((uint32_t)exec_ctx.stkbot % EXEC_STACKSIZE_DEFAULT == 0)
+           && ((uint32_t)exec_ctx.ram_start % XIPFS_FREE_RAM_SIZE == 0)
+           && ((uint32_t)exec_ctx.crt0_ctx.file_base % XIPFS_NVM_PAGE_SIZE == 0)
          )) {
         xipfs_errno = XIPFS_EALIGN;
         return -1;
@@ -1245,7 +1245,7 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
         "msr msp, r1                          \n" /* restore main stack pointer */
         "mov %0, r0                           \n" /* retrieve exec status */
         :"=r"(status)
-        :"r"(crt0), "r"(exec_entry_point), "r"(stack_top), "r"(exec_curr_stack)
+        :"r"(crt0), "r"(exec_entry_point), "r"(stack_top), "r"(_exec_curr_stack)
         :"r0", "r1", "r2", "r4"
     );
 
@@ -1291,7 +1291,6 @@ static bool is_value_in_range(uint32_t value, uint32_t begin, uint32_t end)
 
 int xipfs_mem_manage_handler(void *isr_frame_ptr, uint32_t mmfar, uint32_t cfsr)
 {
-    int8_t status;
     isr_stack_frame_t *frame = (isr_stack_frame_t *)isr_frame_ptr;
     uint32_t fault_addr = cfsr & SCB_CFSR_MMARVALID_Msk ? mmfar : frame->pc;
 
@@ -1311,7 +1310,7 @@ int xipfs_mem_manage_handler(void *isr_frame_ptr, uint32_t mmfar, uint32_t cfsr)
     }
 
     /* Is this a text portion that is faulting ? */
-    if (is_address_in_range(fault_addr,
+    if (is_value_in_range(  fault_addr,
                             (uint32_t)exec_ctx.crt0_ctx.file_base,
                             (uint32_t)exec_ctx.crt0_ctx.nvm_end) == false) {
         (void)mpu_enable();
@@ -1365,7 +1364,7 @@ int xipfs_mem_manage_handler(void *isr_frame_ptr, uint32_t mmfar, uint32_t cfsr)
  * return from the exception
  */
 static void NAKED xipfs_switch_context(void *stack UNUSED,
-                                       control_register_mode_e control UNUSED,
+                                       control_register_mode_t control UNUSED,
                                        void *isr_stack_top UNUSED)
 {
     __asm__ volatile(
@@ -1465,7 +1464,7 @@ int xipfs_syscall_dispatcher(unsigned int *svc_args)
         const char *format = (const char *)svc_args[1];
         va_list *ap = (va_list *)svc_args[2];
         xipfs_user_syscall_vprintf_t f = (xipfs_user_syscall_vprintf_t)
-            exec_ctx.user_syscall_table[XIPFS_USER_SYSCALL_PRINTF]
+            exec_ctx.user_syscall_table[XIPFS_USER_SYSCALL_PRINTF];
         status = f(format, *ap);
         break;
     }

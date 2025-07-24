@@ -364,7 +364,7 @@ typedef ssize_t (*xipfs_user_syscall_copy_file_t)(
     const char *name, void *buf, size_t nbyte);
 typedef int (*xipfs_user_syscall_get_file_size_t)(
     const char *name, size_t *size);
-typedef void *(*xipsf_user_syscall_memset_t)(void *m, int c, size_t n);
+typedef void *(*xipfs_user_syscall_memset_t)(void *m, int c, size_t n);
 
 int xipfs_execv(xipfs_mount_t *mp, const char *full_path, char *const argv[],
                 const void *user_syscalls[XIPFS_USER_SYSCALL_MAX]);
