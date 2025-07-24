@@ -1555,7 +1555,7 @@ xipfs_execv_check(xipfs_mount_t *mp, const char *path,
     if (xipfs_path_new(mp, xipath, path) < 0) {
         return -EIO;
     }
-    switch (xipath.info) {
+    switch (xipath->info) {
     case XIPFS_PATH_EXISTS_AS_FILE:
         break;
     case XIPFS_PATH_EXISTS_AS_EMPTY_DIR:
