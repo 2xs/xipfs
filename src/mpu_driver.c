@@ -65,14 +65,12 @@ int xipfs_mpu_configure_region(
         return -1;
     }
 
-    if (   (xn < XIPFS_MPU_REGION_EXC_FIRST)
-        || (xn > XIPFS_MPU_REGION_EXC_LAST)) {
+    if (xn > XIPFS_MPU_REGION_EXC_LAST) {
         return -1;
     }
 
-    if (   (ap < XIPFS_MPU_REGION_AP_FIRST)
-        || (ap > XIPFS_MPU_REGION_AP_LAST)
-        || (ap == MPU_REGION_AP_RESERVED)) {
+    if (   (ap > XIPFS_MPU_REGION_AP_LAST)
+        || (ap == XIPFS_MPU_REGION_AP_RESERVED)) {
         return -1;
     }
 
