@@ -1508,7 +1508,7 @@ int xipfs_syscall_dispatcher(unsigned int *svc_args)
     case XIPFS_USER_SYSCALL_COPY_FILE: {
         const char *name = (const char *)svc_args[1];
         void *buf = (void *)svc_args[2];
-        size_t nbyte = (void *)svc_args[3];
+        size_t nbyte = (size_t)svc_args[3];
         xipfs_user_syscall_copy_file_t f = (xipfs_user_syscall_copy_file_t)
             exec_ctx.user_syscall_table[XIPFS_USER_SYSCALL_COPY_FILE];
         status = f(name, buf, nbyte);
@@ -1528,7 +1528,7 @@ int xipfs_syscall_dispatcher(unsigned int *svc_args)
         size_t n = (size_t)svc_args[3];
         xipfs_user_syscall_memset_t f = (xipfs_user_syscall_memset_t)
             exec_ctx.user_syscall_table[XIPFS_USER_SYSCALL_MEMSET];
-        status = f(m, c, n);
+        status = (uintptr_t)f(m, c, n);
         break;
     }
     default:
