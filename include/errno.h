@@ -143,11 +143,12 @@ enum xipfs_errno_e {
      */
     XIPFS_EDISABLEMPU,
 
-#endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
+#else
     /**
      * Files were compiled with no XIPFS_ENABLE_SAFE_EXEC_SUPPORT defined.
      */
-    XIPFS_NOSAFESUPPORT,
+    XIPFS_ENOSAFESUPPORT,
+#endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
 
     /**
      * Error number - must be the last element

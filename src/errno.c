@@ -75,6 +75,16 @@ static const char *xipfs_errno_to_str[XIPFS_ENUM] = {
     [XIPFS_EEXIST] = "file already exists",
     [XIPFS_EPERM] = "file has wrong permissions",
     [XIPFS_ENOSPACE] = "insufficient space to create the file",
+#ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
+    [XIPFS_ETEXTREGION] = "failed to set text MPU region",
+    [XIPFS_EDATAREGION] = "failed to set data MPU region",
+    [XIPFS_ESTACKREGION] = "failed to set stack MPU region",
+    [XIPFS_EENABLEMPU] = "failed to enable MPU",
+    [XIPFS_EDISABLEMPU] = "failed to enable MPU",
+#else
+    [XIPFS_ENOSAFESUPPORT] = "no safe execution support"
+#endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
+
 };
 
 /**

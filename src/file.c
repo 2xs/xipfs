@@ -379,7 +379,7 @@ xipfs_exec_exit(int status UNUSED)
  */
 /* TODO: Move this function into board-specific functions */
 static void NAKED
-xipfs_exec_enter(crt0_ctx_t *crt0_ctx UNUSED,
+xipfs_exec_enter(void *crt0_ctx UNUSED,
                  void *entry_point UNUSED,
                  void *stack_top UNUSED)
 {
@@ -1112,6 +1112,32 @@ static void on_mpu_setting_error(bool mpu_was_enabled) {
     __enable_irq();
 }
 
+/**
+ * @internal
+ *
+ * @pre filp must be a pointer to an accessible and valid xipfs
+ * file structure
+ *
+ * @brief Calls an SVC to switch from thread mode to handler mode
+ * and be able to switch to user thread mode safely
+ *
+ * @param crt0 A pointer to the crt0 context to execute the binary
+ *
+ * @param entrypoint A pointer to the entrypoint of the binary
+ *
+ * @param stack A pointer to the top of the binary's stack
+ */
+static void NAKED xipfs_file_safe_exec_svc(crt0_ctx_t *crt0 UNUSED, void *entrypoint UNUSED, void *stack UNUSED) {
+    /**
+     * The arguments are passed to the SVC call through r0, r1, and r2
+     */
+    __asm__ volatile(
+        " push   {lr}                        \n"
+        " ldr    r4, =_exec_curr_stack       \n" // get the current stack
+        " str    sp, [r4]                    \n" // save current SP
+        " svc #" STR(XIPFS_ENTER_SVC_NUMBER) " \n");
+}
+
 #endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
 
 /**
@@ -1137,7 +1163,7 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
 {
 #ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
     void *exec_entry_point;
-    int status;
+    int status = -1;
     bool mpu_was_enabled;
 
     if (xipfs_file_filp_check(filp) < 0) {
@@ -1179,8 +1205,8 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
     crt0_ctx_t *crt0 = safe_exec_relocate(&exec_ctx, &exec_ctx.stktop[4]);
     char *stack_top = (char *)crt0;
 
-    /* align user stack to 8 bytes */
-    stack_top -= (uint32_t)stack_top % 8;
+    /* align user stack to 8 32 bits */
+    stack_top -= (uint32_t)stack_top % 32;
 
     /* Set MPU regions for text, data and stack */
     mpu_region_current_text = XIPFS_MPU_REGION_ENUM_TEXT;
@@ -1229,34 +1255,44 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
     __enable_irq();
 
     __asm__ volatile(
-        "mrs r0, msp                          \n" /* save main stack pointer */
-        "push {r0, r4-r11, lr}                \n" /* save registers */
+        " mrs r0, msp           \n" // save main stack pointer
+        " push {r0, r4-r11, lr} \n" // save registers
+    );
 
-        /*xipfs_file_safe_exec_svc(crt0, exec_entry_point, stack_top);*/
-        "push {lr}                            \n" /* Save the return address to the stack */
-        "ldr r0, =%1                          \n" /* crt0 */
-        "ldr r1, =%2                          \n" /* exec_entry_point */
-        "ldr r2, =%3                          \n" /* stack_top */
-        "ldr r4, =%4                          \n" /* Save the current stack */
-        "str sp, [r4]                         \n" /* into exec_curr_stack */
-        "svc #" STR(XIPFS_ENTER_SVC_NUMBER) " \n"
+    xipfs_file_safe_exec_svc(crt0, exec_entry_point, stack_top);
 
-        "pop {r1, r4-r11, lr}                 \n" /* restore registers */
-        "msr msp, r1                          \n" /* restore main stack pointer */
-        "mov %0, r0                           \n" /* retrieve exec status */
-        :"=r"(status)
-        :"r"(crt0), "r"(exec_entry_point), "r"(stack_top), "r"(_exec_curr_stack)
-        :"r0", "r1", "r2", "r4"
+    __asm__ volatile(
+        " pop {r1, r4-r11, lr} \n" // restore registers
+        " msr msp, r1          \n" // restore main stack pointer
+        " mov %0, r0           \n" // retrieve exec status
+        : "=r"(status)
     );
 
     __disable_irq();
 
-    /* Disable MPU if it was not originally enabled */
-    if ((mpu_was_enabled == false) && (mpu_disable() != 0)) {
+
+    /* Unset MPU regions */
+    if (mpu_disable() != 0) {
         xipfs_errno = XIPFS_EDISABLEMPU;
+        __enable_irq();
         return -1;
     }
 
+    for (xipfs_mpu_region_enum_t i = XIPFS_MPU_REGION_ENUM_FIRST;
+         i <= XIPFS_MPU_REGION_ENUM_LAST; ++i) {
+        MPU->RNR = i;
+        MPU->RASR &= ~MPU_RASR_ENABLE_Msk;
+    }
+
+    /* Restore MPU if it was enabled before calling this function */
+    if (mpu_was_enabled && (mpu_enable() != 0)) {
+        xipfs_errno = XIPFS_EENABLEMPU;
+        __enable_irq();
+        return -1;
+    }
+
+    __DSB();
+    __ISB();
     __enable_irq();
 
     return status;
@@ -1264,7 +1300,7 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
     (void)filp;
     (void)argv;
     (void)user_syscalls;
-    xipfs_errno = XIPFS_NOSAFESUPPORT;
+    xipfs_errno = XIPFS_ENOSAFESUPPORT;
     return -1;
 #endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
 }
@@ -1335,7 +1371,7 @@ int xipfs_mem_manage_handler(void *isr_frame_ptr, uint32_t mmfar, uint32_t cfsr)
 
     SCB->CFSR = SCB_CFSR_MEMFAULTSR_Msk; /* write-1-to-clear */
 
-    mpu_enable();
+    (void)mpu_enable();
     __DSB();
     __ISB();
     __enable_irq();
@@ -1399,9 +1435,9 @@ static void init_isr_stack_frame(isr_stack_frame_t *frame)
  */
 extern void *thread_isr_stack_end(void);
 
-void xipfs_safe_exec_enter(void *crt0_ctx UNUSED,
-                           void *entrypoint UNUSED,
-                           void *stack UNUSED)
+void xipfs_safe_exec_enter(void *crt0_ctx,
+                           void *entrypoint,
+                           void *stack)
 {
     uint32_t *stack_ptr = (uint32_t *)stack;
     stack_ptr -= 8;
