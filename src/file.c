@@ -48,6 +48,12 @@
 #include "include/errno.h"
 #include "include/file.h"
 #include "include/flash.h"
+
+#if (defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8M_BASE__)) && \
+    defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
+#undef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
+#endif
+
 #ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
 #include "include/mpu_driver.h"
 #endif
@@ -1161,7 +1167,7 @@ static void NAKED xipfs_file_safe_exec_svc(crt0_ctx_t *crt0 UNUSED, void *entryp
 int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
                          const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
 {
-#ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
+#if defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
     void *exec_entry_point;
     int status = -1;
     bool mpu_was_enabled;

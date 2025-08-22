@@ -116,8 +116,6 @@ enum xipfs_errno_e {
      */
     XIPFS_ENOSPACE,
 
-#ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
-
     /**
      * Failed to set text MPU region
      */
@@ -143,12 +141,10 @@ enum xipfs_errno_e {
      */
     XIPFS_EDISABLEMPU,
 
-#else
     /**
      * Files were compiled with no XIPFS_ENABLE_SAFE_EXEC_SUPPORT defined.
      */
     XIPFS_ENOSAFESUPPORT,
-#endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
 
     /**
      * Error number - must be the last element
