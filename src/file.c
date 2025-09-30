@@ -70,7 +70,8 @@
  * @brief Amount of free RAM available for the relocatable
  * binary to use
  */
-#define XIPFS_FREE_RAM_SIZE (4096)
+//#define XIPFS_FREE_RAM_SIZE (4096)
+#define XIPFS_FREE_RAM_SIZE (1024*12)
 
 /**
  * @internal
@@ -79,7 +80,7 @@
  *
  * @brief The default execution stack size of the binary
  */
-#define EXEC_STACKSIZE_DEFAULT 1024
+#define EXEC_STACKSIZE_DEFAULT 2048 // 1024
 
 /**
  * @def EXC_RETURN_THREAD_MODE_PSP
@@ -248,23 +249,6 @@ typedef struct crt0_ctx_s {
      * which is the text segment of the xipfs file.
      */
     void *file_base;
-} crt0_ctx_t;
-
-/**
- * @internal
- *
- * @warning When modifying the structure here, please modify
- * also the structure declaration in xipfs_format/stdriot/stdriot.c.
- *
- * @brief Data structure that describes the execution context of
- * a relocatable binary
- */
-typedef struct exec_ctx_s {
-    /**
-     * Data structure required by the CRT0 to execute the
-     * relocatable binary
-     */
-    crt0_ctx_t crt0_ctx;
     /**
      * true if the context is executed in user mode with MPU regions configured,
      * false otherwise
@@ -291,10 +275,32 @@ typedef struct exec_ctx_s {
      */
     const void **user_syscall_table;
     /**
+     * When using xipfs_file_safe_exec, syscalls results will be written here.
+     */
+    int syscall_result;
+} crt0_ctx_t;
+
+/**
+ * @internal
+ *
+ * @warning When modifying the structure here, please modify
+ * also the structure declaration in xipfs_format/stdriot/stdriot.c.
+ *
+ * @brief Data structure that describes the execution context of
+ * a relocatable binary
+ */
+typedef struct exec_ctx_s {
+    /**
+     * Data structure required by the CRT0 to execute the
+     * relocatable binary
+     */
+    crt0_ctx_t *crt0_ctx;
+    /**
      * Reserved memory space in RAM for the free RAM to be used
      * by the relocatable binary
      */
-    char ram_start[XIPFS_FREE_RAM_SIZE-1] __attribute__((aligned(XIPFS_FREE_RAM_SIZE)));
+    //char ram_start[XIPFS_FREE_RAM_SIZE-1] __attribute__((aligned(XIPFS_FREE_RAM_SIZE)));
+    char ram_start[XIPFS_FREE_RAM_SIZE-1] __attribute__((aligned(4096)));
     /**
      * Last byte of the free RAM
      */
@@ -339,16 +345,6 @@ char *xipfs_infos_file = "/.xipfs_infos";
  * The mpu region identifier used to protect Text segment
  */
 static xipfs_mpu_region_enum_t mpu_region_current_text;
-
-/**
- * The mpu region identifier used to protect Data segment
- */
-static xipfs_mpu_region_enum_t mpu_region_current_data;
-
-/**
- * The mpu region identifier used to protect Stack segment
- */
-static xipfs_mpu_region_enum_t mpu_region_current_stack;
 
 #endif
 
@@ -444,7 +440,10 @@ exec_ctx_crt0_init(exec_ctx_t *ctx, xipfs_file_t *filp)
     size_t size;
     void *end;
 
-    crt0_ctx = &ctx->crt0_ctx;
+    /* Map crt0 context onto the stack */
+    ctx->crt0_ctx = (crt0_ctx_t *)(void *)((&(ctx->stktop[4])) - sizeof(crt0_ctx_t));
+
+    crt0_ctx = ctx->crt0_ctx;
     crt0_ctx->bin_base = filp->buf;
     crt0_ctx->ram_start = ctx->ram_start;
     crt0_ctx->ram_end = &ctx->ram_end;
@@ -469,10 +468,61 @@ exec_ctx_crt0_init(exec_ctx_t *ctx, xipfs_file_t *filp)
 static inline void
 exec_ctx_args_init(exec_ctx_t *ctx, char *const argv[])
 {
-    while (ctx->argc < XIPFS_EXEC_ARGC_MAX && argv[ctx->argc] != NULL) {
-        ctx->argv[ctx->argc] = argv[ctx->argc];
-        ctx->argc++;
+    crt0_ctx_t *crt0_ctx = ctx->crt0_ctx;
+
+    while (crt0_ctx->argc < XIPFS_EXEC_ARGC_MAX &&  argv[crt0_ctx->argc] != NULL) {
+        crt0_ctx->argv[crt0_ctx->argc] = argv[crt0_ctx->argc];
+        crt0_ctx->argc++;
     }
+}
+
+/**
+ * @internal
+ *
+ * @brief Copies arguments to the execution context's stack.
+ *
+ * To be able to access executable arguments, these ones are copied into the stack,
+ * and then are allowed to be read/written due to stack's MPU region.
+ * Please note that this copy starts at crt0_ctx and goes backwards memory-wise.
+ *
+ * @param ctx A pointer to a memory region containing an
+ * accessible execution context
+ *
+ * @param argv A pointer to a list of pointers to memory regions
+ * containing accessible arguments to pass to the binary
+ *
+ * @retval NULL when there is not enough space left into the stack
+ * to perform arguments copy.
+ * @retval Pointer to the new stack top after arguments copy, otherwise.
+ */
+static inline char *
+exec_ctx_args_init_safe(exec_ctx_t *ctx, char *const argv[])
+{
+    crt0_ctx_t *crt0_ctx = ctx->crt0_ctx;
+    char *stack_ptr = (char *)crt0_ctx;
+    size_t arg_length;
+
+
+    while (crt0_ctx->argc < XIPFS_EXEC_ARGC_MAX &&  argv[crt0_ctx->argc] != NULL) {
+
+        arg_length = strlen(argv[crt0_ctx->argc]);
+        stack_ptr -= arg_length + 1;
+
+        /* Do we have enough space left in the stack to copy the argument ? */
+        if (stack_ptr < ctx->stkbot) {
+            return NULL;
+        }
+        memcpy(stack_ptr, argv[crt0_ctx->argc], arg_length);
+        stack_ptr[arg_length] = '\0';
+
+        crt0_ctx->argv[crt0_ctx->argc] = stack_ptr;
+        crt0_ctx->argc++;
+    }
+
+    /* Align the stack to a 4 bytes limit */
+    stack_ptr -= ((int)stack_ptr) % 4;
+
+    return stack_ptr;
 }
 
 /**
@@ -511,16 +561,16 @@ static inline void
 exec_ctx_syscall_init(exec_ctx_t *ctx,
                       const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
 {
-    ctx->xipfs_syscall_table = xipfs_syscall_table;
-    ctx->user_syscall_table  = user_syscalls;
+    ctx->crt0_ctx->xipfs_syscall_table = xipfs_syscall_table;
+    ctx->crt0_ctx->user_syscall_table  = user_syscalls;
 }
 
 static inline void
 exec_ctx_syscall_init_safe(exec_ctx_t *ctx,
                            const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
 {
-    ctx->xipfs_syscall_table = NULL;
-    ctx->user_syscall_table  = user_syscalls;
+    ctx->crt0_ctx->xipfs_syscall_table = NULL;
+    ctx->crt0_ctx->user_syscall_table  = user_syscalls;
 }
 
 /**
@@ -548,19 +598,33 @@ exec_ctx_init(exec_ctx_t *exec_ctx, xipfs_file_t *filp,
  *
  * @brief Execution context initializer.
  *
+ * This function will :
+ * - map exec_ctx->crt0 onto the stack space,
+ * - then copy after the arguments into stack,
+ * - and finally set syscalls tables.
+ *
  * @param exec_ctx The execution context to initialize
  * @param filp The file pointer from where to run execution
  * @param argv the execution arguments
  * @param user_syscalls The user syscalls table
+ *
+ * @retval NULL when there is not enough space left into the stack
+ * to perform arguments copy.
+ * @retval Pointer to the new stack top after arguments copy, otherwise.
  */
-static inline void
+static inline char *
 exec_ctx_init_safe(exec_ctx_t *exec_ctx, xipfs_file_t *filp,
                    char *const argv[],
                    const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
 {
+    char *stack_top;
     exec_ctx_crt0_init(exec_ctx, filp);
-    exec_ctx_args_init(exec_ctx, argv);
+    stack_top = exec_ctx_args_init_safe(exec_ctx, argv);
+    if(stack_top == NULL)
+        return NULL;
+
     exec_ctx_syscall_init_safe(exec_ctx, user_syscalls);
+    return stack_top;
 }
 
 /*
@@ -1054,48 +1118,14 @@ xipfs_file_exec(xipfs_file_t *filp, char *const argv[],
 
     exec_ctx_cleanup(&exec_ctx);
     exec_ctx_init(&exec_ctx, filp, argv, user_syscalls);
-    exec_ctx.is_safe_call = 0;
+    exec_ctx.crt0_ctx->is_safe_call = 0;
     exec_entry_point = thumb(&filp->buf[0]);
-    xipfs_exec_enter(&exec_ctx.crt0_ctx, exec_entry_point, exec_ctx.stktop);
+    xipfs_exec_enter(exec_ctx.crt0_ctx, exec_entry_point, exec_ctx.crt0_ctx);
 
     return 0;
 }
 
 #ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
-
-/**
- * @internal
- *
- * @pre The execution context should be relocated only for safe calls,
- * unsafe calls without MPU protection shouldn't use it
- *
- * @brief Relocate the exec context's crt0, argc, argv
- * and required exec_ctx_t struct members
- *
- * @param exec_ctx A pointer to the safe execution context
- *
- * @param stack A pointer to the top of the binary's stack
- *
- * @return Returns a pointer to the relocated crt0 in the user stack
- */
-static crt0_ctx_t *safe_exec_relocate(exec_ctx_t *exec_ctx, void *stack)
-{
-    uint32_t *stack_ptr = (uint32_t *)stack;
-
-    stack_ptr -= exec_ctx->argc;
-    memcpy(stack_ptr, exec_ctx->argv, sizeof(char *) * exec_ctx->argc);
-
-    stack_ptr--;
-    *stack_ptr = exec_ctx->argc;
-
-    stack_ptr--;
-    *stack_ptr = (uint32_t)exec_ctx->is_safe_call;
-
-    stack_ptr -= sizeof(crt0_ctx_t) / sizeof(uint32_t);
-    memcpy(stack_ptr, &exec_ctx->crt0_ctx, sizeof(crt0_ctx_t));
-
-    return (crt0_ctx_t *)stack_ptr;
-}
 
 /**
  * @internal
@@ -1171,26 +1201,32 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
     void *exec_entry_point;
     int status = -1;
     bool mpu_was_enabled;
+    char *stack_top;
 
     if (xipfs_file_filp_check(filp) < 0) {
         /* xipfs_errno was set */
         return -1;
     }
 
+    /* Initialize exec_ctx */
+    exec_ctx_cleanup(&exec_ctx);
+    stack_top = exec_ctx_init_safe(&exec_ctx, filp, argv, user_syscalls);
+
+    if(stack_top == NULL) {
+        return -1;
+    }
+
     /* Check exec_ctx member alignments */
     if (!(
               ((uint32_t)exec_ctx.stkbot % EXEC_STACKSIZE_DEFAULT == 0)
-           && ((uint32_t)exec_ctx.ram_start % XIPFS_FREE_RAM_SIZE == 0)
-           && ((uint32_t)exec_ctx.crt0_ctx.file_base % XIPFS_NVM_PAGE_SIZE == 0)
+           && ((uint32_t)exec_ctx.ram_start % 4096 == 0)
+           && ((uint32_t)exec_ctx.crt0_ctx->file_base % XIPFS_NVM_PAGE_SIZE == 0)
          )) {
         xipfs_errno = XIPFS_EALIGN;
         return -1;
     }
 
-    /* Initialize exec_ctx */
-    exec_ctx_cleanup(&exec_ctx);
-    exec_ctx_init_safe(&exec_ctx, filp, argv, user_syscalls);
-    exec_ctx.is_safe_call = 1;
+    exec_ctx.crt0_ctx->is_safe_call = 1;
     exec_entry_point = thumb(&filp->buf[0]);
 
     /* IRQ and MPU off */
@@ -1204,17 +1240,17 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
             xipfs_errno = XIPFS_EDISABLEMPU;
             return -1;
         }
-
     } else
         mpu_was_enabled = false;
 
-    crt0_ctx_t *crt0 = safe_exec_relocate(&exec_ctx, &exec_ctx.stktop[4]);
-    char *stack_top = (char *)crt0;
-
-    /* align user stack to 8 32 bits */
-    stack_top -= (uint32_t)stack_top % 32;
-
     /* Set MPU regions for text, data and stack */
+
+    /*
+     * Regarding to the TEXT segment, we use 2 MPU regions
+     * that are set alternatively according to MPU faults.
+     * This scheme allows to handle instructions which would be
+     * astride the boundary of 2 memory regions.
+     */
     mpu_region_current_text = XIPFS_MPU_REGION_ENUM_TEXT;
     if (xipfs_mpu_configure_region(
             mpu_region_current_text,
@@ -1226,21 +1262,91 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
         return -1;
     }
 
-    mpu_region_current_data = XIPFS_MPU_REGION_ENUM_DATA;
-    if (xipfs_mpu_configure_region(
-            mpu_region_current_data,
-            exec_ctx.crt0_ctx.ram_start, XIPFS_FREE_RAM_SIZE,
-            XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
+    /*
+     * For the DATA segment, we can take advantage of the data size,
+     * fixed to 12 KB while aligning the ram to 4 KB boundaries.
+     * Within these conditions, it is possible to set 2 regions once
+     * for all, with no dynamic region assignments.
+     *
+     * When the ram is aligned to a 8 Kb boundary :
+     * - Set the first region A to {ram start, 8 KB size};
+     * - Set the second region B to {ram start + 8 KB, 4 KB size}.
+     *
+     * +--------+----+
+     * |    A   |  B |
+     * +--------+----+
+     * |        |    |
+     * |        |    .-- Ram start + 12 KB
+     * |        .------- Ram start + 8 KB
+     * .---------------- Ram starts at a 8KB boundary
+     *
+     * When the ram is aligned to a (8 + 4) KB boundary (which is a 4 KB boundary) :
+     * - Set the first region A to {ram start, 4 KB size};
+     * - Set the second region B to {ram start + 4 KB, 8 KB size}.
+     * +----+--------+
+     * |  A |    B   |
+     * +----+--------+
+     * |    |        |
+     * |    |        .-- Ram start + 12 KB
+     * |    .----------- Ram start + 4 KB
+     * .---------------- Ram starts at a 4 KB boundary, while not being a 8 KB one.
+     *
+     * These two cases cover up the whole 12 KB of ram, with no need for dynamic regions setting.
+     */
+    /* Are we on a 8 KB boundary ? */
+    if ( ((((uint32_t)exec_ctx.ram_start) >> 12) & 1) == 0 ) {
+        if (xipfs_mpu_configure_region(
+                XIPFS_MPU_REGION_ENUM_DATA,
+                exec_ctx.crt0_ctx->ram_start, 8192,
+                XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
 
-        on_mpu_setting_error(mpu_was_enabled);
+            on_mpu_setting_error(mpu_was_enabled);
 
-        xipfs_errno = XIPFS_EDATAREGION;
-        return -1;
+            xipfs_errno = XIPFS_EDATAREGION;
+            return -1;
+        }
+
+        if (xipfs_mpu_configure_region(
+                XIPFS_MPU_REGION_ENUM_EXTRA_DATA,
+                exec_ctx.crt0_ctx->ram_start + 8192, 4096,
+                XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
+
+            on_mpu_setting_error(mpu_was_enabled);
+
+            xipfs_errno = XIPFS_EDATAREGION;
+            return -1;
+        }
+
+    } else {
+        if (xipfs_mpu_configure_region(
+                XIPFS_MPU_REGION_ENUM_DATA,
+                exec_ctx.crt0_ctx->ram_start, 4096,
+                XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
+
+            on_mpu_setting_error(mpu_was_enabled);
+
+            xipfs_errno = XIPFS_EDATAREGION;
+            return -1;
+        }
+
+        if (xipfs_mpu_configure_region(
+                XIPFS_MPU_REGION_ENUM_EXTRA_DATA,
+                exec_ctx.crt0_ctx->ram_start + 4096, 8192,
+                XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
+
+            on_mpu_setting_error(mpu_was_enabled);
+
+            xipfs_errno = XIPFS_EDATAREGION;
+            return -1;
+        }
     }
 
-    mpu_region_current_stack = XIPFS_MPU_REGION_ENUM_STACK;
+    /*
+     * At last, STACK segment is merely handled by a single MPU region,
+     * without any dynamic modification.
+     */
     if (xipfs_mpu_configure_region(
-            mpu_region_current_stack,
+            XIPFS_MPU_REGION_ENUM_STACK,
             exec_ctx.stkbot, EXEC_STACKSIZE_DEFAULT,
             XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
 
@@ -1250,12 +1356,14 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
         return -1;
     }
 
+
     /* Enable MPU if it is not already */
-    if ((mpu_was_enabled == false) && (mpu_enable() != 0)) {
+    if (mpu_enable() != 0) {
         on_mpu_setting_error(false);
         xipfs_errno = XIPFS_EENABLEMPU;
         return -1;
     }
+
     __DSB();
     __ISB();
     __enable_irq();
@@ -1265,7 +1373,7 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
         " push {r0, r4-r11, lr} \n" // save registers
     );
 
-    xipfs_file_safe_exec_svc(crt0, exec_entry_point, stack_top);
+    xipfs_file_safe_exec_svc(exec_ctx.crt0_ctx, exec_entry_point, stack_top);
 
     __asm__ volatile(
         " pop {r1, r4-r11, lr} \n" // restore registers
@@ -1276,8 +1384,7 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
 
     __disable_irq();
 
-
-    /* Unset MPU regions */
+    /* Disable MPU regions */
     if (mpu_disable() != 0) {
         xipfs_errno = XIPFS_EDISABLEMPU;
         __enable_irq();
@@ -1316,78 +1423,6 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
 /**
  * @internal
  *
- * @brief Check if a value is within a specified range
- *
- * @param value The value to check
- *
- * @param begin The beginning of the range
- *
- * @param end The end of the range
- *
- * @return True if the address is withing the specified range, false otherwise
- */
-static bool is_value_in_range(uint32_t value, uint32_t begin, uint32_t end)
-{
-    return value >= begin && value <= end;
-}
-
-int xipfs_mem_manage_handler(void *isr_frame_ptr, uint32_t mmfar, uint32_t cfsr)
-{
-    isr_stack_frame_t *frame = (isr_stack_frame_t *)isr_frame_ptr;
-    uint32_t fault_addr = cfsr & SCB_CFSR_MMARVALID_Msk ? mmfar : frame->pc;
-
-    __disable_irq();
-    if (mpu_disable() != 0) {
-        __enable_irq();
-        return -1;
-    }
-
-    /* Check if the stack frame is in user stack */
-    if (is_value_in_range((uint32_t)isr_frame_ptr,
-                          (uint32_t)exec_ctx.stkbot,
-                          (uint32_t)exec_ctx.stktop + 4) == false) {
-        (void)mpu_enable();
-        __enable_irq();
-        return -2;
-    }
-
-    /* Is this a text portion that is faulting ? */
-    if (is_value_in_range(  fault_addr,
-                            (uint32_t)exec_ctx.crt0_ctx.file_base,
-                            (uint32_t)exec_ctx.crt0_ctx.nvm_end) == false) {
-        (void)mpu_enable();
-        __enable_irq();
-        return -3;
-    }
-
-    /* Set a new text region */
-    if (mpu_region_current_text == XIPFS_MPU_REGION_ENUM_TEXT)
-        mpu_region_current_text = XIPFS_MPU_REGION_ENUM_EXTRA_TEXT;
-    else
-        mpu_region_current_text = XIPFS_MPU_REGION_ENUM_TEXT;
-
-    if (xipfs_mpu_configure_region(
-            mpu_region_current_text,
-            (void *)fault_addr, XIPFS_NVM_PAGE_SIZE,
-            XIPFS_MPU_REGION_EXC_OK, XIPFS_MPU_REGION_AP_RO_RO) < 0) {
-        (void)mpu_enable();
-        __enable_irq();
-        return -4;
-    }
-
-    SCB->CFSR = SCB_CFSR_MEMFAULTSR_Msk; /* write-1-to-clear */
-
-    (void)mpu_enable();
-    __DSB();
-    __ISB();
-    __enable_irq();
-
-    return 0;
-}
-
-/**
- * @internal
- *
  * @pre control param should be at least 2 because SPSEL bit of the control register should be 1,
  * it means that we should always return from the exception with the psp stack
  *
@@ -1417,8 +1452,8 @@ static void NAKED xipfs_switch_context(void *stack UNUSED,
         "msr control, r1                              \n" /* set the control register to control arg */
         "isb                                          \n"
         "ldr r0, =" STR(EXC_RETURN_THREAD_MODE_PSP) " \n" /* exec return to thread mode using psp */
-        " cpsie i                                     \n" /* enable interrupts */
-        " bx r0                                       \n" /* jump to exec return to thread mode with psp */
+        "cpsie i                                      \n" /* enable interrupts */
+        "bx r0                                        \n" /* jump to exec return to thread mode with psp */
     );
 }
 
@@ -1485,16 +1520,97 @@ static void xipfs_safe_exec_exit(int status)
 
 /**
  * @internal
+ *
+ * @brief Check if a value is within a specified range
+ *
+ * @param value The value to check
+ *
+ * @param begin The beginning of the range
+ *
+ * @param end The end of the range
+ *
+ * @return True if the address is withing the specified range, false otherwise
+ */
+static bool is_value_in_range(uint32_t value, uint32_t begin, uint32_t end)
+{
+    return value >= begin && value <= end;
+}
+
+int xipfs_mem_manage_handler(void *isr_frame_ptr, uint32_t mmfar, uint32_t cfsr)
+{
+    isr_stack_frame_t *frame = (isr_stack_frame_t *)isr_frame_ptr;
+    uint32_t fault_addr = cfsr & SCB_CFSR_MMARVALID_Msk ? mmfar : frame->pc;
+
+    __disable_irq();
+    if (mpu_disable() != 0) {
+        __enable_irq();
+        return -1;
+    }
+
+    /* Check if the stack frame is in user stack */
+    if (is_value_in_range((uint32_t)isr_frame_ptr,
+                          (uint32_t)exec_ctx.stkbot,
+                          (uint32_t)exec_ctx.stktop + 4) == false) {
+        (void)mpu_enable();
+        __enable_irq();
+        return -2;
+    }
+
+    /* Is this a text portion that is faulting ? */
+    if (is_value_in_range(  fault_addr,
+                            (uint32_t)exec_ctx.crt0_ctx->file_base,
+                            (uint32_t)exec_ctx.crt0_ctx->nvm_end) == false) {
+        printf("Illegal memory access detected at 0x%lx.\n", fault_addr);
+        (void)mpu_enable();
+        __enable_irq();
+
+        SCB->CFSR = SCB_CFSR_MEMFAULTSR_Msk; /* write-1-to-clear */
+
+        xipfs_safe_exec_exit(-1);
+        // Should never be reached.
+        return -3;
+    }
+
+    /* Set a new text region */
+    if (mpu_region_current_text == XIPFS_MPU_REGION_ENUM_TEXT)
+        mpu_region_current_text = XIPFS_MPU_REGION_ENUM_EXTRA_TEXT;
+    else
+        mpu_region_current_text = XIPFS_MPU_REGION_ENUM_TEXT;
+
+    /* The region must be aligned with XIPFS_NVM_PAGE_SIZE and must contain fault_addr */
+    fault_addr = (fault_addr / XIPFS_NVM_PAGE_SIZE) * XIPFS_NVM_PAGE_SIZE;
+
+    if (xipfs_mpu_configure_region(
+            mpu_region_current_text,
+            (char *)fault_addr, XIPFS_NVM_PAGE_SIZE,
+            XIPFS_MPU_REGION_EXC_OK, XIPFS_MPU_REGION_AP_RO_RO) < 0) {
+        (void)mpu_enable();
+        __enable_irq();
+        return -4;
+    }
+
+    SCB->CFSR = SCB_CFSR_MEMFAULTSR_Msk; /* write-1-to-clear */
+
+    (void)mpu_enable();
+    __DSB();
+    __ISB();
+    __enable_irq();
+
+    return 0;
+}
+
+/**
+ * @internal
  * @remarks This function uses the user syscall table in exec_ctx.
- * That means that functions called here are RIOT's one, except from
+ * That means that functions called here are RIOT's ones, except from
  * XIPFS_SYSCALL_EXIT.
  *
  * @remarks long and ssize_t are 32 bits wide on arm 32bits.
  */
-int xipfs_syscall_dispatcher(unsigned int *svc_args)
+void xipfs_syscall_dispatcher(unsigned int *svc_args)
 {
-    int status = -1;
     unsigned int syscall_number = svc_args[0];
+    crt0_ctx_t *crt0_ctx = exec_ctx.crt0_ctx;
 
     switch (syscall_number) {
     case XIPFS_SYSCALL_EXIT: {
@@ -1506,21 +1622,21 @@ int xipfs_syscall_dispatcher(unsigned int *svc_args)
         const char *format = (const char *)svc_args[1];
         va_list *ap = (va_list *)svc_args[2];
         xipfs_user_syscall_vprintf_t f = (xipfs_user_syscall_vprintf_t)
-            exec_ctx.user_syscall_table[XIPFS_USER_SYSCALL_PRINTF];
-        status = f(format, *ap);
+            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_PRINTF];
+        crt0_ctx->syscall_result = f(format, *ap);
         break;
     }
     case XIPFS_USER_SYSCALL_GET_TEMP: {
         xipfs_user_syscall_get_temp_t f = (xipfs_user_syscall_get_temp_t)
-            exec_ctx.user_syscall_table[XIPFS_USER_SYSCALL_GET_TEMP];
-        status = f();
+            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_GET_TEMP];
+        crt0_ctx->syscall_result = f();
         break;
     }
     case XIPFS_USER_SYSCALL_ISPRINT: {
         int character = (int)svc_args[1];
         xipfs_user_syscall_isprint_t f = (xipfs_user_syscall_isprint_t)
-        exec_ctx.user_syscall_table[XIPFS_USER_SYSCALL_ISPRINT];
-        status = f(character);
+        crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_ISPRINT];
+        crt0_ctx->syscall_result = f(character);
         break;
     }
     case XIPFS_USER_SYSCALL_STRTOL: {
@@ -1528,23 +1644,23 @@ int xipfs_syscall_dispatcher(unsigned int *svc_args)
         char **endptr = (char **)svc_args[2];
         int base = (int)svc_args[3];
         xipfs_user_syscall_strtol_t f = (xipfs_user_syscall_strtol_t)
-            exec_ctx.user_syscall_table[XIPFS_USER_SYSCALL_STRTOL];
-        status = f(str, endptr, base);
+            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_STRTOL];
+        crt0_ctx->syscall_result = f(str, endptr, base);
         break;
     }
     case XIPFS_USER_SYSCALL_GET_LED: {
         int pos = (int)svc_args[1];
         xipfs_user_syscall_get_led_t f = (xipfs_user_syscall_get_led_t)
-            exec_ctx.user_syscall_table[XIPFS_USER_SYSCALL_GET_LED];
-        status = f(pos);
+            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_GET_LED];
+        crt0_ctx->syscall_result = f(pos);
         break;
     }
     case XIPFS_USER_SYSCALL_SET_LED: {
         int pos = (int)svc_args[1];
         int val = (int)svc_args[2];
         xipfs_user_syscall_set_led_t f = (xipfs_user_syscall_set_led_t)
-            exec_ctx.user_syscall_table[XIPFS_USER_SYSCALL_SET_LED];
-        status = f(pos, val);
+            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_SET_LED];
+        crt0_ctx->syscall_result = f(pos, val);
         break;
     }
     case XIPFS_USER_SYSCALL_COPY_FILE: {
@@ -1552,16 +1668,16 @@ int xipfs_syscall_dispatcher(unsigned int *svc_args)
         void *buf = (void *)svc_args[2];
         size_t nbyte = (size_t)svc_args[3];
         xipfs_user_syscall_copy_file_t f = (xipfs_user_syscall_copy_file_t)
-            exec_ctx.user_syscall_table[XIPFS_USER_SYSCALL_COPY_FILE];
-        status = f(name, buf, nbyte);
+            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_COPY_FILE];
+        crt0_ctx->syscall_result = f(name, buf, nbyte);
         break;
     }
     case XIPFS_USER_SYSCALL_GET_FILE_SIZE: {
         const char *name = (const char *)svc_args[1];
         size_t *size = (size_t *)svc_args[2];
         xipfs_user_syscall_get_file_size_t f = (xipfs_user_syscall_get_file_size_t)
-            exec_ctx.user_syscall_table[XIPFS_USER_SYSCALL_GET_FILE_SIZE];
-        status = f(name, size);
+            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_GET_FILE_SIZE];
+        crt0_ctx->syscall_result = f(name, size);
         break;
     }
     case XIPFS_USER_SYSCALL_MEMSET: {
@@ -1569,14 +1685,13 @@ int xipfs_syscall_dispatcher(unsigned int *svc_args)
         int c = (int)svc_args[2];
         size_t n = (size_t)svc_args[3];
         xipfs_user_syscall_memset_t f = (xipfs_user_syscall_memset_t)
-            exec_ctx.user_syscall_table[XIPFS_USER_SYSCALL_MEMSET];
-        status = (uintptr_t)f(m, c, n);
+            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_MEMSET];
+        crt0_ctx->syscall_result = (uintptr_t)f(m, c, n);
         break;
     }
     default:
         break;
     }
-    return status;
 }
 
 #endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */

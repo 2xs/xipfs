@@ -436,7 +436,7 @@ void xipfs_safe_exec_enter(void *crt0_ctx, void *entrypoint, void *stack);
  * @param svc_args An array containing the arguments of the syscall,
  * the first one is the syscall number used to dispatch.
  */
-int xipfs_syscall_dispatcher(unsigned int *svc_args);
+void xipfs_syscall_dispatcher(unsigned int *svc_args);
 
 #endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
 
