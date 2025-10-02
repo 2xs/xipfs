@@ -1,9 +1,9 @@
 /*******************************************************************************/
-/*  © Université de Lille, The Pip Development Team (2015-2024)                */
-/*  Copyright (C) 2020-2024 Orange                                             */
+/*  © Université de Lille, The Pip Development Team (2015-2025)                */
+/*  Copyright (C) 2020-2025 Orange                                             */
 /*                                                                             */
-/*  This software is a computer program whose purpose is to run a minimal,     */
-/*  hypervisor relying on proven properties such as memory isolation.          */
+/*  This software is a computer program whose purpose is to run a filesystem   */
+/*  with in-place execution and memory isolation.                              */
 /*                                                                             */
 /*  This software is governed by the CeCILL license under French law and       */
 /*  abiding by the rules of distribution of free software.  You can  use,      */
@@ -1578,6 +1578,29 @@ xipfs_execv_check(xipfs_mount_t *mp, const char *path,
     default:
         return -EINVAL;
     }
+
+    xipfs_file_desc_t descp;
+    uint32_t last_uint32_value;
+
+    if (xipfs_open(mp, &descp, path, O_RDONLY, 0) < 0)
+        return -EINVAL;
+
+    if (xipfs_lseek(mp, &descp, -sizeof(last_uint32_value), SEEK_END) < 0) {
+        (void)xipfs_close(mp, &descp);
+        return -EIO;
+    }
+
+    if (xipfs_read(mp, &descp, &last_uint32_value, sizeof(last_uint32_value)) < 0) {
+        (void)xipfs_close(mp, &descp);
+        return -EIO;
+    }
+
+    (void)xipfs_close(mp, &descp);
+
+#define CRT0_MAGIC_NUMBER_AND_VERSION (0xFACADE11)
+    if (last_uint32_value != CRT0_MAGIC_NUMBER_AND_VERSION)
+        return -EBADF;
+#undef CRT0_MAGIC_NUMBER_AND_VERSION
 
     return 0;
 }

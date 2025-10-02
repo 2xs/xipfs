@@ -1,9 +1,9 @@
 /*******************************************************************************/
-/*  © Université de Lille, The Pip Development Team (2015-2024)                */
-/*  Copyright (C) 2020-2024 Orange                                             */
+/*  © Université de Lille, The Pip Development Team (2015-2025)                */
+/*  Copyright (C) 2020-2025 Orange                                             */
 /*                                                                             */
-/*  This software is a computer program whose purpose is to run a minimal,     */
-/*  hypervisor relying on proven properties such as memory isolation.          */
+/*  This software is a computer program whose purpose is to run a filesystem   */
+/*  with in-place execution and memory isolation.                              */
 /*                                                                             */
 /*  This software is governed by the CeCILL license under French law and       */
 /*  abiding by the rules of distribution of free software.  You can  use,      */
