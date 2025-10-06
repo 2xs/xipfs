@@ -51,7 +51,7 @@
 
 #if (defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8M_BASE__)) && \
     defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
-#undef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
+#error "Unsupported MPU type"
 #endif
 
 #ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
