@@ -132,6 +132,11 @@ enum xipfs_errno_e {
     XIPFS_ESTACKREGION,
 
     /**
+     * Failed to set shared api MPU region
+     */
+    XIPFS_ESHAREDAPIREGION,
+
+    /**
      * Failed to enable MPU
      */
     XIPFS_EENABLEMPU,

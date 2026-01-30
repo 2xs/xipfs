@@ -1520,7 +1520,7 @@ xipfs_new_file(xipfs_mount_t *mp, const char *path,
 static int
 xipfs_execv_check(xipfs_mount_t *mp, const char *path,
                   char *const argv[],
-                  const void *user_syscalls[XIPFS_USER_SYSCALL_MAX],
+                  const void *syscalls[XIPFS_SYSCALL_MAX],
                   xipfs_path_t *xipath) {
     size_t len;
     int ret;
@@ -1544,10 +1544,10 @@ xipfs_execv_check(xipfs_mount_t *mp, const char *path,
     if (argv == NULL) {
         return -EFAULT;
     }
-    if(user_syscalls == NULL)
+    if(syscalls == NULL)
         return -EFAULT;
-    for(int i = 0; i < XIPFS_USER_SYSCALL_MAX; ++i) {
-        if (user_syscalls[i] == NULL) {
+    for(int i = 0; i < XIPFS_SYSCALL_MAX; ++i) {
+        if (syscalls[i] == NULL) {
             return -EFAULT;
         }
     }
@@ -1597,7 +1597,7 @@ xipfs_execv_check(xipfs_mount_t *mp, const char *path,
 
     (void)xipfs_close(mp, &descp);
 
-#define CRT0_MAGIC_NUMBER_AND_VERSION (0xFACADE11)
+#define CRT0_MAGIC_NUMBER_AND_VERSION (0xFACADE12)
     if (last_uint32_value != CRT0_MAGIC_NUMBER_AND_VERSION)
         return -EBADF;
 #undef CRT0_MAGIC_NUMBER_AND_VERSION
@@ -1608,16 +1608,16 @@ xipfs_execv_check(xipfs_mount_t *mp, const char *path,
 int
 xipfs_execv(xipfs_mount_t *mp, const char *path,
             char *const argv[],
-            const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
+            const void *syscalls[XIPFS_SYSCALL_MAX])
 {
     xipfs_path_t xipath;
     int ret;
 
-    ret = xipfs_execv_check(mp, path, argv, user_syscalls, &xipath);
+    ret = xipfs_execv_check(mp, path, argv, syscalls, &xipath);
     if (ret < 0)
         return ret;
 
-    if ((ret = xipfs_file_exec(xipath.witness, argv, user_syscalls)) < 0) {
+    if ((ret = xipfs_file_exec(xipath.witness, argv, syscalls)) < 0) {
         return -EIO;
     }
 
@@ -1627,16 +1627,16 @@ xipfs_execv(xipfs_mount_t *mp, const char *path,
 int
 xipfs_safe_execv(xipfs_mount_t *mp, const char *path,
             char *const argv[],
-            const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
+            const void *syscalls[XIPFS_SYSCALL_MAX])
 {
     xipfs_path_t xipath;
     int ret;
 
-    ret = xipfs_execv_check(mp, path, argv, user_syscalls, &xipath);
+    ret = xipfs_execv_check(mp, path, argv, syscalls, &xipath);
     if (ret < 0)
         return ret;
 
-    if ((ret = xipfs_file_safe_exec(xipath.witness, argv, user_syscalls)) < 0) {
+    if ((ret = xipfs_file_safe_exec(xipath.witness, argv, syscalls)) < 0) {
         return -EIO;
     }
 

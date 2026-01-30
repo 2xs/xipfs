@@ -340,36 +340,38 @@ int xipfs_closedir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp);
  * @brief An enumeration describing the index of functions.
  * @see xipfs_execv
  */
-typedef enum xipfs_user_syscall_e {
-    XIPFS_USER_SYSCALL_PRINTF,
-    XIPFS_USER_SYSCALL_GET_TEMP,
-    XIPFS_USER_SYSCALL_ISPRINT,
-    XIPFS_USER_SYSCALL_STRTOL,
-    XIPFS_USER_SYSCALL_GET_LED,
-    XIPFS_USER_SYSCALL_SET_LED,
-    XIPFS_USER_SYSCALL_COPY_FILE,
-    XIPFS_USER_SYSCALL_GET_FILE_SIZE,
-    XIPFS_USER_SYSCALL_MEMSET,
-    XIPFS_USER_SYSCALL_MAX
-} xipfs_user_syscall_t;
+typedef enum xipfs_syscall_e {
+    XIPFS_SYSCALL_EXIT,
+    XIPFS_SYSCALL_VPRINTF,
+    XIPFS_SYSCALL_GET_TEMP,
+    XIPFS_SYSCALL_ISPRINT,
+    XIPFS_SYSCALL_STRTOL,
+    XIPFS_SYSCALL_GET_LED,
+    XIPFS_SYSCALL_SET_LED,
+    XIPFS_SYSCALL_COPY_FILE,
+    XIPFS_SYSCALL_GET_FILE_SIZE,
+    XIPFS_SYSCALL_MEMSET,
+    XIPFS_SYSCALL_MAX
+} xipfs_syscall_t;
 
-typedef int (*xipfs_user_syscall_vprintf_t)(const char *format, va_list ap);
-typedef int (*xipfs_user_syscall_get_temp_t)(void);
-typedef int (*xipfs_user_syscall_isprint_t)(int character);
-typedef long (*xipfs_user_syscall_strtol_t)(
+typedef int (*xipfs_syscall_exit_t)(int status);
+typedef int (*xipfs_syscall_vprintf_t)(const char *format, va_list ap);
+typedef int (*xipfs_syscall_get_temp_t)(void);
+typedef int (*xipfs_syscall_isprint_t)(int character);
+typedef long (*xipfs_syscall_strtol_t)(
     const char *str, char **endptr, int base);
-typedef int (*xipfs_user_syscall_get_led_t)(int pos);
-typedef int (*xipfs_user_syscall_set_led_t)(int pos, int val);
-typedef ssize_t (*xipfs_user_syscall_copy_file_t)(
+typedef int (*xipfs_syscall_get_led_t)(int pos);
+typedef int (*xipfs_syscall_set_led_t)(int pos, int val);
+typedef ssize_t (*xipfs_syscall_copy_file_t)(
     const char *name, void *buf, size_t nbyte);
-typedef int (*xipfs_user_syscall_get_file_size_t)(
+typedef int (*xipfs_syscall_get_file_size_t)(
     const char *name, size_t *size);
-typedef void *(*xipfs_user_syscall_memset_t)(void *m, int c, size_t n);
+typedef void *(*xipfs_syscall_memset_t)(void *m, int c, size_t n);
 
 int xipfs_execv(xipfs_mount_t *mp, const char *full_path, char *const argv[],
-                const void *user_syscalls[XIPFS_USER_SYSCALL_MAX]);
+                const void *user_syscalls[XIPFS_SYSCALL_MAX]);
 int xipfs_safe_execv(xipfs_mount_t *mp, const char *full_path, char *const argv[],
-                     const void *user_syscalls[XIPFS_USER_SYSCALL_MAX]);
+                     const void *user_syscalls[XIPFS_SYSCALL_MAX]);
 
 int xipfs_format(xipfs_mount_t *mp);
 int xipfs_fstat(xipfs_mount_t *mp, xipfs_file_desc_t *descp, struct stat *buf);

@@ -56,6 +56,7 @@
 
 #ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
 #include "include/mpu_driver.h"
+#include "include/shared_api.h"
 #endif
 
 /*
@@ -139,6 +140,7 @@
  * @brief Used for preprocessing in asm statements
  */
 #define STR_HELPER(x) #x
+
 /**
  * @internal
  *
@@ -213,18 +215,15 @@ typedef enum control_register_mode_e {
     CTRL_USER_PSP = 3
 } control_register_mode_t;
 
-/*
- * Internal structure
- */
-
 /**
  * @internal
  *
  * @brief Data structure that describes the memory layout
  * required by the CRT0 to execute the relocatable binary
+ * @warning MUST REMAIN SYNCHRONIZED with FAE format and libpip-riot definitions.
  */
 typedef struct crt0_ctx_s {
-    /**
+    /*
      * Start address of the binary in the NVM
      */
     void *bin_base;
@@ -245,56 +244,50 @@ typedef struct crt0_ctx_s {
      */
     void *nvm_end;
     /**
+     * Arguments passed to the relocatable binary.
+     * This is up to caller and callee to agree on a common arguments type.
+     */
+    void *argv;
+} crt0_ctx_t;
+
+/**
+ * @warning MUST REMAIN SYNCHRONIZED with libpip-riot and FAE format definitions.
+ */
+typedef struct xipfs_crt0_ctx_data_s {
+    /*
      * Start address of the file in NVM,
      * which is the text segment of the xipfs file.
      */
     void *file_base;
-    /**
-     * true if the context is executed in user mode with MPU regions configured,
+    /*
+     * true if the context is executed in user mode with configured MPU regions,
      * false otherwise
      */
     unsigned char is_safe_call;
-    /**
-     * Number of arguments passed to the relocatable binary
+    /*
+     * Table of function pointers for functions used by stdriot.
+     */
+    void **syscall_table;
+    /*
+     * Number of arguments passed to the relocatable binary.
      */
     int argc;
-    /**
-     * Arguments passed to the relocatable binary
+    /*
+     * Arguments passed to the relocatable binary.
      */
     char *argv[XIPFS_EXEC_ARGC_MAX];
-    /**
-     * Table of function pointers for functions
-     * used by xipfs_format's CRT0 and/or stdriot.
-     * These functions are not meant to be shared with
-     * end users.
+    /*
+     * RIOT's Global Offset Table
      */
-    const void **xipfs_syscall_table;
-    /**
-     * Table of function pointers for the RIOT functions
-     * used by the relocatable binary
+    const void *former_got;
+    /*
+     * Relocatable binary's current got
      */
-    const void **user_syscall_table;
-    /**
-     * When using xipfs_file_safe_exec, syscalls results will be written here.
-     */
-    int syscall_result;
-} crt0_ctx_t;
+    const void *current_got;
 
-/**
- * @internal
- *
- * @warning When modifying the structure here, please modify
- * also the structure declaration in xipfs_format/stdriot/stdriot.c.
- *
- * @brief Data structure that describes the execution context of
- * a relocatable binary
- */
-typedef struct exec_ctx_s {
-    /**
-     * Data structure required by the CRT0 to execute the
-     * relocatable binary
-     */
-    crt0_ctx_t *crt0_ctx;
+} xipfs_crt0_ctx_data_t;
+
+typedef struct memories_context_s {
     /**
      * Reserved memory space in RAM for the free RAM to be used
      * by the relocatable binary
@@ -314,7 +307,11 @@ typedef struct exec_ctx_s {
      * Last word of the stack indicating the top of the stack
      */
     char stktop[4];
-} exec_ctx_t;
+} memories_context_t;
+
+#if defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
+extern uint32_t _start_shared_api_code;
+#endif
 
 /*
  * Global variables
@@ -323,9 +320,47 @@ typedef struct exec_ctx_s {
 /**
  * @internal
  *
- * @brief The execution context of a relocatable binary
+ * @brief The memories context of a relocatable binary
  */
-static exec_ctx_t exec_ctx;
+static memories_context_t memories_context;
+
+/**
+ * @internal
+ *
+ * @brief The crt0 context used to perform exec/safe_exec
+ */
+static crt0_ctx_t *crt0_context;
+
+/**
+ * @internal
+ *
+ * @brief The stack pointer used to perform exec/safe_exec
+ */
+static char *stack_top;
+
+#if defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
+/**
+ * @internal
+ * @brief Real syscalls table.
+ *
+ * In xipfs_safe_exec, we set a table of wrappers into xipfs_crt0_ctx_data.
+ * These latter are trampoline functions that trigger a svc.
+ *
+ * While processing the svc in xipfs_syscall_dispatcher, we need the real original
+ * syscalls table to perform the actual code, which is stored here thanks to
+ * exec_syscalls_init_safe.
+ *
+ * @see exec_syscalls_init_safe
+ * @see xipfs_syscall_dispatcher
+ */
+static const void **xipfs_safe_exec_syscalls_table;
+
+/**
+ * The mpu region identifier used to protect Text segment
+ */
+static xipfs_mpu_region_enum_t mpu_region_current_text;
+
+#endif
 
 /**
  * @internal
@@ -339,14 +374,6 @@ static void *_exec_curr_stack USED;
  * @brief A pointer to a virtual file name
  */
 char *xipfs_infos_file = "/.xipfs_infos";
-
-#ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
-/**
- * The mpu region identifier used to protect Text segment
- */
-static xipfs_mpu_region_enum_t mpu_region_current_text;
-
-#endif
 
 /*
  * Helper functions
@@ -362,7 +389,7 @@ static xipfs_mpu_region_enum_t mpu_region_current_text;
  * the R0 register
  */
 /* TODO: Move this function into board-specific functions */
-static void NAKED
+void NAKED
 xipfs_exec_exit(int status UNUSED)
 {
     __asm__ volatile
@@ -417,215 +444,250 @@ static inline void *thumb(void *addr)
  * @param exec_ctx The address of the context to clean up
  */
 static inline void
-exec_ctx_cleanup(exec_ctx_t *exec_ctx)
+exec_cleanup(void)
 {
-    (void)memset(exec_ctx, 0, sizeof(*exec_ctx));
+    (void)memset(&memories_context, 0, sizeof(memories_context));
+    crt0_context = NULL;
+    stack_top = NULL;
+#if defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
+    xipfs_safe_exec_syscalls_table = NULL;
+#endif
 }
 
 /**
  * @internal
  *
- * @brief Fills the CRT0 data structure
- *
- * @param ctx A pointer to a memory region containing an
- * accessible execution context
+ * @brief Fills the CR0 and xipfs_crt0_ctx_data structures
  *
  * @param filp A pointer to a memory region containing an
  * accessible xipfs file structure
  */
 static inline void
-exec_ctx_crt0_init(exec_ctx_t *ctx, xipfs_file_t *filp)
+exec_crt0_init(xipfs_file_t *filp)
 {
-    crt0_ctx_t *crt0_ctx;
+    xipfs_crt0_ctx_data_t   *xipfs_crt0_ctx_data;
     size_t size;
     void *end;
 
-    /* Map crt0 context onto the stack */
-    ctx->crt0_ctx = (crt0_ctx_t *)(void *)((&(ctx->stktop[4])) - sizeof(crt0_ctx_t));
+    /* Map crt0 context and xipfs_crt0_ctx_data onto the stack */
+    crt0_context = (crt0_ctx_t *)(void *)((&(memories_context.stktop[4])) - sizeof(crt0_ctx_t));
+    xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)(void *)(((char *)crt0_context) - sizeof(xipfs_crt0_ctx_data_t));
+    stack_top = (char *)xipfs_crt0_ctx_data;
 
-    crt0_ctx = ctx->crt0_ctx;
-    crt0_ctx->bin_base = filp->buf;
-    crt0_ctx->ram_start = ctx->ram_start;
-    crt0_ctx->ram_end = &ctx->ram_end;
+    crt0_context->argv = xipfs_crt0_ctx_data;
+
+    stack_top = (char *)xipfs_crt0_ctx_data;
+
+    crt0_context->bin_base = filp->buf;
+
+    crt0_context->ram_start = memories_context.ram_start;
+    crt0_context->ram_end = &memories_context.ram_end;
+
     size = xipfs_file_get_size_(filp);
-    crt0_ctx->nvm_start = &filp->buf[size];
+    crt0_context->nvm_start = &filp->buf[size];
+
     end = (char *)filp + filp->reserved;
-    crt0_ctx->nvm_end = end;
-    crt0_ctx->file_base = filp;
+    crt0_context->nvm_end = end;
+
+    xipfs_crt0_ctx_data->file_base = filp;
+    __asm__ volatile (
+        "mov %0, sl"
+        : "=r"(xipfs_crt0_ctx_data->former_got)
+    );
 }
 
 /**
  * @internal
  *
- * @brief Copies argument pointers to the execution context
- *
- * @param ctx A pointer to a memory region containing an
- * accessible execution context
+ * @brief Copies argument pointers to the crt0 context
  *
  * @param argv A pointer to a list of pointers to memory regions
  * containing accessible arguments to pass to the binary
  */
 static inline void
-exec_ctx_args_init(exec_ctx_t *ctx, char *const argv[])
+exec_args_init(char *const argv[])
 {
-    crt0_ctx_t *crt0_ctx = ctx->crt0_ctx;
+    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context->argv;
 
-    while (crt0_ctx->argc < XIPFS_EXEC_ARGC_MAX &&  argv[crt0_ctx->argc] != NULL) {
-        crt0_ctx->argv[crt0_ctx->argc] = argv[crt0_ctx->argc];
-        crt0_ctx->argc++;
+    unsigned int argc = 0;
+    while (argc < XIPFS_EXEC_ARGC_MAX &&  argv[argc] != NULL) {
+        xipfs_crt0_ctx_data->argv[argc] = argv[argc];
+        argc++;
     }
+
+    xipfs_crt0_ctx_data->argc = argc;
 }
 
 /**
  * @internal
  *
- * @brief Copies arguments to the execution context's stack.
+ * @brief Copies arguments to the executable stack.
  *
  * To be able to access executable arguments, these ones are copied into the stack,
  * and then are allowed to be read/written due to stack's MPU region.
- * Please note that this copy starts at crt0_ctx and goes backwards memory-wise.
- *
- * @param ctx A pointer to a memory region containing an
- * accessible execution context
+ * Please note that this copy starts at stack_top and goes backwards memory-wise.
  *
  * @param argv A pointer to a list of pointers to memory regions
  * containing accessible arguments to pass to the binary
- *
- * @retval NULL when there is not enough space left into the stack
- * to perform arguments copy.
- * @retval Pointer to the new stack top after arguments copy, otherwise.
  */
-static inline char *
-exec_ctx_args_init_safe(exec_ctx_t *ctx, char *const argv[])
+static inline void
+exec_args_init_safe(char *const argv[])
 {
-    crt0_ctx_t *crt0_ctx = ctx->crt0_ctx;
-    char *stack_ptr = (char *)crt0_ctx;
+    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context->argv;
+    char *stack_ptr = stack_top;
     size_t arg_length;
 
+    unsigned int argc = 0;
+    while (argc < XIPFS_EXEC_ARGC_MAX &&  argv[argc] != NULL) {
 
-    while (crt0_ctx->argc < XIPFS_EXEC_ARGC_MAX &&  argv[crt0_ctx->argc] != NULL) {
-
-        arg_length = strlen(argv[crt0_ctx->argc]);
+        arg_length = strlen(argv[argc]);
         stack_ptr -= arg_length + 1;
 
         /* Do we have enough space left in the stack to copy the argument ? */
-        if (stack_ptr < ctx->stkbot) {
-            return NULL;
+        if (stack_ptr < memories_context.stkbot) {
+            stack_top = NULL;
+            return;
         }
-        memcpy(stack_ptr, argv[crt0_ctx->argc], arg_length);
+        memcpy(stack_ptr, argv[argc], arg_length);
         stack_ptr[arg_length] = '\0';
 
-        crt0_ctx->argv[crt0_ctx->argc] = stack_ptr;
-        crt0_ctx->argc++;
+        xipfs_crt0_ctx_data->argv[argc] = stack_ptr;
+        argc++;
     }
+
+    xipfs_crt0_ctx_data->argc = argc;
 
     /* Align the stack to a 4 bytes limit */
     stack_ptr -= ((int)stack_ptr) % 4;
 
-    return stack_ptr;
+    stack_top = stack_ptr;
 }
-
-/**
- * @brief An enumeration describing the index of xipfs functions.
- *
- * @warning MUST REMAIN SYNCHRONIZED with xipfs_format stdriot's one.
- */
-typedef enum xipfs_syscall_e {
-    XIPFS_SYSCALL_EXIT = XIPFS_USER_SYSCALL_MAX,
-    XIPFS_SYSCALL_MAX,
-
-    XIPFS_SYSCALL_FIRST = XIPFS_SYSCALL_EXIT,
-    XIPFS_SYSCALL_LAST  = XIPFS_SYSCALL_MAX,
-} xipfs_syscall_t;
-
-#define XIPFS_SYSCALL_COUNT (XIPFS_SYSCALL_LAST - XIPFS_SYSCALL_FIRST + 1)
-
-typedef int (*xipfs_syscall_exit_t)(int status);
-
-static const void *xipfs_syscall_table[XIPFS_SYSCALL_COUNT] = {
-    [XIPFS_SYSCALL_EXIT - XIPFS_SYSCALL_FIRST] = xipfs_exec_exit
-};
 
 /**
  * @internal
  *
- * @brief Sets the syscalls tables in execution context.
+ * @brief Copies syscalls pointers to the executable stack.
  *
- * @param ctx A pointer to a memory region containing an
- * accessible execution context
+ * To prevent from using another MPU region, the syscalls pointers are copied
+ * onto the executable stack.
+ * Because the latter already has its associated MPU region, it allows
+ * the executable to have access to the syscalls table.
  *
- * @see xipfs_syscall_t.
- * @see xipfs_user_syscall_t.
+ * @param syscalls The syscalls function pointers to copy.
  */
-static inline void
-exec_ctx_syscall_init(exec_ctx_t *ctx,
-                      const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
+static void **exec_syscalls_copy_to_stack(const void *syscalls[XIPFS_SYSCALL_MAX])
 {
-    ctx->crt0_ctx->xipfs_syscall_table = xipfs_syscall_table;
-    ctx->crt0_ctx->user_syscall_table  = user_syscalls;
+    const unsigned int bytesize = sizeof(void *) * XIPFS_SYSCALL_MAX;
+    if ( (stack_top - bytesize) < memories_context.stkbot) {
+        stack_top = NULL;
+        return NULL;
+    }
+
+    stack_top -= bytesize;
+    memcpy(stack_top, syscalls, bytesize);
+    return (void **)(uintptr_t)stack_top;
 }
 
+/**
+ * @internal
+ *
+ * @brief Sets the syscalls table in xipfs_crt0_ctx_data.
+ *
+ * @param syscalls Syscalls table to set.
+ *
+ * Because both unsafe and safe programs executions share the same CRT0 structure,
+ * syscalls pointers must be copied to the executable stack.
+ * This location will end up in the non-const pointer of xipfs_crt0_ctx_data_t.
+ *
+ * @see xipfs_syscall_t.
+ * @see exec_init.
+ */
 static inline void
-exec_ctx_syscall_init_safe(exec_ctx_t *ctx,
-                           const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
+exec_syscalls_init(const void *syscalls[XIPFS_SYSCALL_MAX])
 {
-    ctx->crt0_ctx->xipfs_syscall_table = NULL;
-    ctx->crt0_ctx->user_syscall_table  = user_syscalls;
+    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context->argv;
+
+    xipfs_crt0_ctx_data->syscall_table = exec_syscalls_copy_to_stack(syscalls);
+    xipfs_crt0_ctx_data->is_safe_call  = 0;
 }
+
+
+#if defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
+/**
+ * @internal
+ *
+ * @brief Sets the syscalls table in xipfs_safe_exec_syscalls_table and wrappers in xipfs_crt0_ctx_data.
+ *
+ * Wrappers are trampoline functions triggering syscalls, that will call the actual functions stored into
+ * xipfs_safe_exec_syscalls_table.
+ * Note that the actual functions pointers are copied onto executable stack to benefit from its MPU region.
+ *
+ * @param syscalls Syscalls table to set.
+ *
+ * @see xipfs_syscall_t.
+ * @see exec_init_safe.
+ */
+static inline void
+exec_syscalls_init_safe(const void *syscalls[XIPFS_SYSCALL_MAX])
+{
+    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context->argv;
+
+    xipfs_crt0_ctx_data->syscall_table =
+        exec_syscalls_copy_to_stack(xipfs_safe_exec_syscalls_wrappers);
+    xipfs_crt0_ctx_data->is_safe_call  = 1;
+
+    xipfs_safe_exec_syscalls_table = syscalls;
+}
+#endif
 
 /**
  * @internal
  *
  * @brief Execution context initializer.
  *
- * @param exec_ctx The execution context to initialize
  * @param filp The file pointer from where to run execution
  * @param argv the execution arguments
  * @param user_syscalls The user syscalls table
  */
 static inline void
-exec_ctx_init(exec_ctx_t *exec_ctx, xipfs_file_t *filp,
-              char *const argv[],
-              const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
+exec_init(xipfs_file_t *filp,
+          char *const argv[],
+          const void *syscalls[XIPFS_SYSCALL_MAX])
 {
-    exec_ctx_crt0_init(exec_ctx, filp);
-    exec_ctx_args_init(exec_ctx, argv);
-    exec_ctx_syscall_init(exec_ctx, user_syscalls);
+    exec_crt0_init(filp);
+    exec_args_init(argv);
+    exec_syscalls_init(syscalls);
 }
 
+#if defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
 /**
  * @internal
  *
  * @brief Execution context initializer.
  *
  * This function will :
- * - map exec_ctx->crt0 onto the stack space,
+ * - map crt0_context onto the stack space,
  * - then copy after the arguments into stack,
  * - and finally set syscalls tables.
  *
- * @param exec_ctx The execution context to initialize
  * @param filp The file pointer from where to run execution
  * @param argv the execution arguments
- * @param user_syscalls The user syscalls table
+ * @param syscalls The user syscalls table
  *
- * @retval NULL when there is not enough space left into the stack
- * to perform arguments copy.
- * @retval Pointer to the new stack top after arguments copy, otherwise.
  */
-static inline char *
-exec_ctx_init_safe(exec_ctx_t *exec_ctx, xipfs_file_t *filp,
-                   char *const argv[],
-                   const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
+static inline void
+exec_init_safe(xipfs_file_t *filp,
+               char *const argv[],
+               const void *syscalls[XIPFS_SYSCALL_MAX])
 {
-    char *stack_top;
-    exec_ctx_crt0_init(exec_ctx, filp);
-    stack_top = exec_ctx_args_init_safe(exec_ctx, argv);
+    exec_crt0_init(filp);
+    exec_args_init_safe(argv);
     if(stack_top == NULL)
-        return NULL;
+        return;
 
-    exec_ctx_syscall_init_safe(exec_ctx, user_syscalls);
-    return stack_top;
+    exec_syscalls_init_safe(syscalls);
 }
+#endif
 
 /*
  * Extern functions
@@ -1100,27 +1162,29 @@ xipfs_file_write_8(xipfs_file_t *filp, off_t pos, char byte)
  * containing accessible arguments to pass to the binary
  *
  * @param user_syscalls A pointer to a list of pointers defining a syscalls
- * table as stated by xipfs_user_syscall_t.
+ * table as stated by xipfs_syscall_t.
  *
  * @return Returns zero if the function succeed or a negative
  * value otherwise
  */
 int
 xipfs_file_exec(xipfs_file_t *filp, char *const argv[],
-                const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
+                const void *syscalls[XIPFS_SYSCALL_MAX])
 {
-    void *exec_entry_point;
+    void *entry_point;
 
     if (xipfs_file_filp_check(filp) < 0) {
         /* xipfs_errno was set */
         return -1;
     }
 
-    exec_ctx_cleanup(&exec_ctx);
-    exec_ctx_init(&exec_ctx, filp, argv, user_syscalls);
-    exec_ctx.crt0_ctx->is_safe_call = 0;
-    exec_entry_point = thumb(&filp->buf[0]);
-    xipfs_exec_enter(exec_ctx.crt0_ctx, exec_entry_point, exec_ctx.crt0_ctx);
+    exec_cleanup();
+    exec_init(filp, argv, syscalls);
+    if (stack_top == NULL) {
+        return -1;
+    }
+    entry_point = thumb(&filp->buf[0]);
+    xipfs_exec_enter(crt0_context, entry_point, stack_top);
 
     return 0;
 }
@@ -1189,44 +1253,42 @@ static void NAKED xipfs_file_safe_exec_svc(crt0_ctx_t *crt0 UNUSED, void *entryp
  * containing accessible arguments to pass to the binary
  *
  * @param user_syscalls A pointer to a list of pointers defining a syscalls
- * table as stated by xipfs_user_syscall_t.
+ * table as stated by xipfs_syscall_t.
  *
  * @return Returns zero if the function succeed or a negative
  * value otherwise
  */
 int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
-                         const void *user_syscalls[XIPFS_USER_SYSCALL_MAX])
+                         const void *syscalls[XIPFS_SYSCALL_MAX])
 {
 #if defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
     void *exec_entry_point;
     int status = -1;
     bool mpu_was_enabled;
-    char *stack_top;
 
     if (xipfs_file_filp_check(filp) < 0) {
         /* xipfs_errno was set */
         return -1;
     }
 
-    /* Initialize exec_ctx */
-    exec_ctx_cleanup(&exec_ctx);
-    stack_top = exec_ctx_init_safe(&exec_ctx, filp, argv, user_syscalls);
-
-    if(stack_top == NULL) {
+    /* Initialize crt0, xipfs_crt0_ctx_data */
+    exec_cleanup();
+    exec_init_safe(filp, argv, syscalls);
+    if (stack_top == NULL) {
         return -1;
     }
 
-    /* Check exec_ctx member alignments */
+    /* Check memories_context members and filp alignments */
     if (!(
-              ((uint32_t)exec_ctx.stkbot % EXEC_STACKSIZE_DEFAULT == 0)
-           && ((uint32_t)exec_ctx.ram_start % 4096 == 0)
-           && ((uint32_t)exec_ctx.crt0_ctx->file_base % XIPFS_NVM_PAGE_SIZE == 0)
+              ((uint32_t)memories_context.stkbot % EXEC_STACKSIZE_DEFAULT == 0)
+           && ((uint32_t)memories_context.ram_start % 4096 == 0)
+           && ((uint32_t)filp % XIPFS_NVM_PAGE_SIZE == 0)
+           && ((uint32_t)&_start_shared_api_code % 4096 == 0)
          )) {
         xipfs_errno = XIPFS_EALIGN;
         return -1;
     }
 
-    exec_ctx.crt0_ctx->is_safe_call = 1;
     exec_entry_point = thumb(&filp->buf[0]);
 
     /* IRQ and MPU off */
@@ -1263,6 +1325,19 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
     }
 
     /*
+     * Set MPU region for shared api code.
+     */
+    if (xipfs_mpu_configure_region(
+            XIPFS_MPU_REGION_ENUM_SHARED_API,
+            &_start_shared_api_code, 4096,
+            XIPFS_MPU_REGION_EXC_OK, XIPFS_MPU_REGION_AP_RO_RO) < 0) {
+
+        on_mpu_setting_error(mpu_was_enabled);
+        xipfs_errno = XIPFS_ESHAREDAPIREGION;
+        return -1;
+    }
+
+    /*
      * For the DATA segment, we can take advantage of the data size,
      * fixed to 12 KB while aligning the ram to 4 KB boundaries.
      * Within these conditions, it is possible to set 2 regions once
@@ -1294,10 +1369,10 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
      * These two cases cover up the whole 12 KB of ram, with no need for dynamic regions setting.
      */
     /* Are we on a 8 KB boundary ? */
-    if ( ((((uint32_t)exec_ctx.ram_start) >> 12) & 1) == 0 ) {
+    if ( ((((uint32_t)memories_context.ram_start) >> 12) & 1) == 0 ) {
         if (xipfs_mpu_configure_region(
                 XIPFS_MPU_REGION_ENUM_DATA,
-                exec_ctx.crt0_ctx->ram_start, 8192,
+                memories_context.ram_start, 8192,
                 XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
 
             on_mpu_setting_error(mpu_was_enabled);
@@ -1308,7 +1383,7 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
 
         if (xipfs_mpu_configure_region(
                 XIPFS_MPU_REGION_ENUM_EXTRA_DATA,
-                exec_ctx.crt0_ctx->ram_start + 8192, 4096,
+                memories_context.ram_start + 8192, 4096,
                 XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
 
             on_mpu_setting_error(mpu_was_enabled);
@@ -1320,7 +1395,7 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
     } else {
         if (xipfs_mpu_configure_region(
                 XIPFS_MPU_REGION_ENUM_DATA,
-                exec_ctx.crt0_ctx->ram_start, 4096,
+                memories_context.ram_start, 4096,
                 XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
 
             on_mpu_setting_error(mpu_was_enabled);
@@ -1331,7 +1406,7 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
 
         if (xipfs_mpu_configure_region(
                 XIPFS_MPU_REGION_ENUM_EXTRA_DATA,
-                exec_ctx.crt0_ctx->ram_start + 4096, 8192,
+                memories_context.ram_start + 4096, 8192,
                 XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
 
             on_mpu_setting_error(mpu_was_enabled);
@@ -1347,7 +1422,7 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
      */
     if (xipfs_mpu_configure_region(
             XIPFS_MPU_REGION_ENUM_STACK,
-            exec_ctx.stkbot, EXEC_STACKSIZE_DEFAULT,
+            memories_context.stkbot, EXEC_STACKSIZE_DEFAULT,
             XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
 
         on_mpu_setting_error(mpu_was_enabled);
@@ -1373,7 +1448,7 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
         " push {r0, r4-r11, lr} \n" // save registers
     );
 
-    xipfs_file_safe_exec_svc(exec_ctx.crt0_ctx, exec_entry_point, stack_top);
+    xipfs_file_safe_exec_svc(crt0_context, exec_entry_point, stack_top);
 
     __asm__ volatile(
         " pop {r1, r4-r11, lr} \n" // restore registers
@@ -1476,7 +1551,7 @@ static void init_isr_stack_frame(isr_stack_frame_t *frame)
  */
 extern void *thread_isr_stack_end(void);
 
-void xipfs_safe_exec_enter(void *crt0_ctx,
+void xipfs_safe_exec_enter(void *crt0_context,
                            void *entrypoint,
                            void *stack)
 {
@@ -1485,7 +1560,7 @@ void xipfs_safe_exec_enter(void *crt0_ctx,
 
     isr_stack_frame_t *frame = (isr_stack_frame_t *)stack_ptr;
     init_isr_stack_frame(frame);
-    frame->r0 = (uint32_t)crt0_ctx;
+    frame->r0 = (uint32_t)crt0_context;
     frame->pc = (uint32_t)entrypoint;
 
     void *isr_stack_top = thread_isr_stack_end();
@@ -1503,8 +1578,7 @@ void xipfs_safe_exec_enter(void *crt0_ctx,
  *
  * @param status The return status of the safe call
  */
-static void xipfs_safe_exec_exit(int status)
-{
+void xipfs_safe_exec_exit(int status) {
     uint32_t *current_stack_ptr = (uint32_t *)_exec_curr_stack;
     uint32_t return_address = *current_stack_ptr;
     current_stack_ptr -= 7; // 7 * 4 = 28, not 32 bytes because we deallocate the return address of 4 bytes
@@ -1549,17 +1623,18 @@ int xipfs_mem_manage_handler(void *isr_frame_ptr, uint32_t mmfar, uint32_t cfsr)
 
     /* Check if the stack frame is in user stack */
     if (is_value_in_range((uint32_t)isr_frame_ptr,
-                          (uint32_t)exec_ctx.stkbot,
-                          (uint32_t)exec_ctx.stktop + 4) == false) {
+                          (uint32_t)memories_context.stkbot,
+                          (uint32_t)memories_context.stktop + 4) == false) {
         (void)mpu_enable();
         __enable_irq();
         return -2;
     }
 
     /* Is this a text portion that is faulting ? */
+    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context->argv;
     if (is_value_in_range(  fault_addr,
-                            (uint32_t)exec_ctx.crt0_ctx->file_base,
-                            (uint32_t)exec_ctx.crt0_ctx->nvm_end) == false) {
+                            (uint32_t)xipfs_crt0_ctx_data->file_base,
+                            (uint32_t)crt0_context->nvm_end) == false) {
         printf("Illegal memory access detected at 0x%lx.\n", fault_addr);
         (void)mpu_enable();
         __enable_irq();
@@ -1610,87 +1685,97 @@ int xipfs_mem_manage_handler(void *isr_frame_ptr, uint32_t mmfar, uint32_t cfsr)
 void xipfs_syscall_dispatcher(unsigned int *svc_args)
 {
     unsigned int syscall_number = svc_args[0];
-    crt0_ctx_t *crt0_ctx = exec_ctx.crt0_ctx;
+    /*uint32_t *caller_stack;
+    uint32_t result;*/
 
     switch (syscall_number) {
     case XIPFS_SYSCALL_EXIT: {
         int ret_status = svc_args[1];
-        xipfs_safe_exec_exit(ret_status);
+        xipfs_syscall_exit_t f = (xipfs_syscall_exit_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_EXIT];
+        f(ret_status);
         break;
     }
-    case XIPFS_USER_SYSCALL_PRINTF: {
+    case XIPFS_SYSCALL_VPRINTF: {
         const char *format = (const char *)svc_args[1];
-        va_list *ap = (va_list *)svc_args[2];
-        xipfs_user_syscall_vprintf_t f = (xipfs_user_syscall_vprintf_t)
-            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_PRINTF];
-        crt0_ctx->syscall_result = f(format, *ap);
+        va_list ap;
+        __asm__ volatile
+        (
+            "mov %0, %1\n"
+            : "=r" (ap)
+            : "r" (svc_args[2])
+            :
+        );
+        xipfs_syscall_vprintf_t f = (xipfs_syscall_vprintf_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VPRINTF];
+        svc_args[0] = (unsigned int)f(format, ap);
         break;
     }
-    case XIPFS_USER_SYSCALL_GET_TEMP: {
-        xipfs_user_syscall_get_temp_t f = (xipfs_user_syscall_get_temp_t)
-            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_GET_TEMP];
-        crt0_ctx->syscall_result = f();
+    case XIPFS_SYSCALL_GET_TEMP: {
+        xipfs_syscall_get_temp_t f = (xipfs_syscall_get_temp_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_GET_TEMP];
+        svc_args[0] = (unsigned int)f();
         break;
     }
-    case XIPFS_USER_SYSCALL_ISPRINT: {
+    case XIPFS_SYSCALL_ISPRINT: {
         int character = (int)svc_args[1];
-        xipfs_user_syscall_isprint_t f = (xipfs_user_syscall_isprint_t)
-        crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_ISPRINT];
-        crt0_ctx->syscall_result = f(character);
+        xipfs_syscall_isprint_t f = (xipfs_syscall_isprint_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_ISPRINT];
+        svc_args[0] = (unsigned int)f(character);
         break;
     }
-    case XIPFS_USER_SYSCALL_STRTOL: {
+    case XIPFS_SYSCALL_STRTOL: {
         const char *str = (const char *)svc_args[1];
         char **endptr = (char **)svc_args[2];
         int base = (int)svc_args[3];
-        xipfs_user_syscall_strtol_t f = (xipfs_user_syscall_strtol_t)
-            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_STRTOL];
-        crt0_ctx->syscall_result = f(str, endptr, base);
+        xipfs_syscall_strtol_t f = (xipfs_syscall_strtol_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_STRTOL];
+        svc_args[0] = (unsigned int)f(str, endptr, base);
         break;
     }
-    case XIPFS_USER_SYSCALL_GET_LED: {
+    case XIPFS_SYSCALL_GET_LED: {
         int pos = (int)svc_args[1];
-        xipfs_user_syscall_get_led_t f = (xipfs_user_syscall_get_led_t)
-            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_GET_LED];
-        crt0_ctx->syscall_result = f(pos);
+        xipfs_syscall_get_led_t f = (xipfs_syscall_get_led_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_GET_LED];
+        svc_args[0] = (unsigned int)f(pos);
         break;
     }
-    case XIPFS_USER_SYSCALL_SET_LED: {
+    case XIPFS_SYSCALL_SET_LED: {
         int pos = (int)svc_args[1];
         int val = (int)svc_args[2];
-        xipfs_user_syscall_set_led_t f = (xipfs_user_syscall_set_led_t)
-            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_SET_LED];
-        crt0_ctx->syscall_result = f(pos, val);
+        xipfs_syscall_set_led_t f = (xipfs_syscall_set_led_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_SET_LED];
+        svc_args[0] = (unsigned int)f(pos, val);
         break;
     }
-    case XIPFS_USER_SYSCALL_COPY_FILE: {
+    case XIPFS_SYSCALL_COPY_FILE: {
         const char *name = (const char *)svc_args[1];
         void *buf = (void *)svc_args[2];
         size_t nbyte = (size_t)svc_args[3];
-        xipfs_user_syscall_copy_file_t f = (xipfs_user_syscall_copy_file_t)
-            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_COPY_FILE];
-        crt0_ctx->syscall_result = f(name, buf, nbyte);
+        xipfs_syscall_copy_file_t f = (xipfs_syscall_copy_file_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_COPY_FILE];
+        svc_args[0] = (unsigned int)f(name, buf, nbyte);
         break;
     }
-    case XIPFS_USER_SYSCALL_GET_FILE_SIZE: {
+    case XIPFS_SYSCALL_GET_FILE_SIZE: {
         const char *name = (const char *)svc_args[1];
         size_t *size = (size_t *)svc_args[2];
-        xipfs_user_syscall_get_file_size_t f = (xipfs_user_syscall_get_file_size_t)
-            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_GET_FILE_SIZE];
-        crt0_ctx->syscall_result = f(name, size);
+        xipfs_syscall_get_file_size_t f = (xipfs_syscall_get_file_size_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_GET_FILE_SIZE];
+        svc_args[0] = (unsigned int)f(name, size);
         break;
     }
-    case XIPFS_USER_SYSCALL_MEMSET: {
+    case XIPFS_SYSCALL_MEMSET: {
         void *m = (void *)svc_args[1];
         int c = (int)svc_args[2];
         size_t n = (size_t)svc_args[3];
-        xipfs_user_syscall_memset_t f = (xipfs_user_syscall_memset_t)
-            crt0_ctx->user_syscall_table[XIPFS_USER_SYSCALL_MEMSET];
-        crt0_ctx->syscall_result = (uintptr_t)f(m, c, n);
+        xipfs_syscall_memset_t f = (xipfs_syscall_memset_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_MEMSET];
+        svc_args[0] = (uintptr_t)f(m, c, n);
         break;
     }
     default:
-        break;
+        return;
     }
 }
 
