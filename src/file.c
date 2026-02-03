@@ -49,11 +49,6 @@
 #include "include/file.h"
 #include "include/flash.h"
 
-#if (defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8M_BASE__)) && \
-    defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
-#error "Unsupported MPU type"
-#endif
-
 #ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
 #include "include/mpu_driver.h"
 #include "include/shared_api.h"
@@ -1215,9 +1210,6 @@ static void on_mpu_setting_error(bool mpu_was_enabled) {
 /**
  * @internal
  *
- * @pre filp must be a pointer to an accessible and valid xipfs
- * file structure
- *
  * @brief Calls an SVC to switch from thread mode to handler mode
  * and be able to switch to user thread mode safely
  *
@@ -1236,6 +1228,30 @@ static void NAKED xipfs_file_safe_exec_svc(crt0_ctx_t *crt0 UNUSED, void *entryp
         " ldr    r4, =_exec_curr_stack       \n" // get the current stack
         " str    sp, [r4]                    \n" // save current SP
         " svc #" STR(XIPFS_ENTER_SVC_NUMBER) " \n");
+}
+
+/**
+ * @internal
+ * @brief Runtime MPU check.
+ *
+ * Attention :
+ * - We implement only ARMv7-M MPU code path; then we need to disable it
+ *   when compiling for ARMv8-M model.
+ * - When XIPFS is compiled for RIOT, there are targets with an ARMv8-M MPU.
+ * - There is NO fine-grained feature filter that can be used to prevent from code compilation
+ *   or tests running.
+ * - In RIOT, we need to compile xipfs package and tests for these platforms, and
+ *   failing at runtime instead of compile-time, as done formerly.
+ * - Thus, xipfs_check_mpu is responsible for runtime cancelling according to compile-time
+ *   preprocessor symbols.
+*/
+static int xipfs_check_mpu(void) {
+#if (defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8M_BASE__))
+    xipfs_errno = XIPFS_ENOMPUSUPPORT;
+    return -1;
+#else
+    return 0;
+#endif // (defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8M_BASE__))
 }
 
 #endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
@@ -1267,6 +1283,18 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
     bool mpu_was_enabled;
 
     if (xipfs_file_filp_check(filp) < 0) {
+        /* xipfs_errno was set */
+        return -1;
+    }
+
+    /* Attention:
+     * We must fail at runtime after xipfs_file_filp_check,
+     * so the tests in RIOT will succeed even on ARMv8-M boards.
+     * There is no fine-grained feature to avoid to run tests for them.
+     * Then, we must cancel xipfs_file_safe_exec here.
+     * @see xipfs_check_mpu
+     */
+    if (xipfs_check_mpu() < 0) {
         /* xipfs_errno was set */
         return -1;
     }
@@ -1466,11 +1494,20 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
         return -1;
     }
 
+    /*
+     * Attention :
+     * - We need these lines of code to disable MPU regions that have been set.
+     * - We cannot fail to compile for ARMv8-M targets in RIOT, for both XIPFS package and tests.
+     * - xipfs_check_mpu is responsible to cancel this code path before these lines at runtime
+     * @see xipfs_check_mpu
+     */
+#if (!defined(__ARM_ARCH_8M_MAIN__) && !defined(__ARM_ARCH_8M_BASE__))
     for (xipfs_mpu_region_enum_t i = XIPFS_MPU_REGION_ENUM_FIRST;
          i <= XIPFS_MPU_REGION_ENUM_LAST; ++i) {
         MPU->RNR = i;
         MPU->RASR &= ~MPU_RASR_ENABLE_Msk;
     }
+#endif
 
     /* Restore MPU if it was enabled before calling this function */
     if (mpu_was_enabled && (mpu_enable() != 0)) {

@@ -81,7 +81,8 @@ static const char *xipfs_errno_to_str[XIPFS_ENUM] = {
     [XIPFS_ESHAREDAPIREGION] = "failed to set shared api MPU region",
     [XIPFS_EENABLEMPU] = "failed to enable MPU",
     [XIPFS_EDISABLEMPU] = "failed to enable MPU",
-    [XIPFS_ENOSAFESUPPORT] = "no safe execution support"
+    [XIPFS_ENOSAFESUPPORT] = "no safe execution support",
+    [XIPFS_ENOMPUSUPPORT] = "no implementation for this MPU type"
 };
 
 /**

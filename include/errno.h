@@ -152,6 +152,11 @@ enum xipfs_errno_e {
     XIPFS_ENOSAFESUPPORT,
 
     /**
+     * There is no implementation for this MPU type.
+     */
+    XIPFS_ENOMPUSUPPORT,
+
+    /**
      * Error number - must be the last element
      */
     XIPFS_ENUM,

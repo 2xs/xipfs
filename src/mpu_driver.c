@@ -97,7 +97,11 @@ int xipfs_mpu_configure_region(
         (1  << 16)  |
         (log2_size << 1);
 
+#ifdef RIOT_APPLICATION
     return mpu_configure(mpu_region,(uintptr_t)address, attributes);
+#else
+#error "xipfs_mpu_configure_region has no implementation"
+#endif // RIOT_APPLICATION
 
 #else /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
     (void)mpu_region;

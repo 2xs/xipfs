@@ -1541,7 +1541,7 @@ xipfs_execv_check(xipfs_mount_t *mp, const char *path,
     if (len == XIPFS_PATH_MAX) {
         return -ENAMETOOLONG;
     }
-    if (argv == NULL) {
+    if ((argv == NULL) || (argv[0] == NULL)) {
         return -EFAULT;
     }
     if(syscalls == NULL)

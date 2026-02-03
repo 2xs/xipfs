@@ -493,7 +493,7 @@ xipfs_fs_format(xipfs_mount_t *mp)
     end_page = xipfs_nvm_page(end_addr);
 
     i = 0;
-    while (start_page + i < end_page) {
+    while ((start_page + i) < end_page) {
         if (xipfs_flash_erase_page(start_page + i) < 0) {
             /* xipfs_errno was set */
             return -1;

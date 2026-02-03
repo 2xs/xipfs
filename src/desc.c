@@ -374,7 +374,7 @@ xipfs_desc_untrack_all(xipfs_mount_t *mp)
             break;
         case DESC_FREE:
         default:
-            continue;
+            break;
         }
     }
 
