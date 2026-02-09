@@ -305,7 +305,7 @@ typedef struct memories_context_s {
 } memories_context_t;
 
 #if defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
-extern uint32_t _start_shared_api_code;
+extern uint32_t _xipfs_shared_api_code_out_start;
 #endif
 
 /*
@@ -1311,7 +1311,7 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
               ((uint32_t)memories_context.stkbot % EXEC_STACKSIZE_DEFAULT == 0)
            && ((uint32_t)memories_context.ram_start % 4096 == 0)
            && ((uint32_t)filp % XIPFS_NVM_PAGE_SIZE == 0)
-           && ((uint32_t)&_start_shared_api_code % 4096 == 0)
+           && ((uint32_t)&_xipfs_shared_api_code_out_start % XIPFS_SHARED_API_CODE_ALIGNMENT == 0)
          )) {
         xipfs_errno = XIPFS_EALIGN;
         return -1;
@@ -1357,7 +1357,7 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
      */
     if (xipfs_mpu_configure_region(
             XIPFS_MPU_REGION_ENUM_SHARED_API,
-            &_start_shared_api_code, 4096,
+            &_xipfs_shared_api_code_out_start, XIPFS_SHARED_API_CODE_SIZE,
             XIPFS_MPU_REGION_EXC_OK, XIPFS_MPU_REGION_AP_RO_RO) < 0) {
 
         on_mpu_setting_error(mpu_was_enabled);
