@@ -220,7 +220,6 @@ static void *memset_wrapper(void *m, int c, size_t n) {
 __attribute__((section(".xipfs_shared_api_code_in"), aligned(XIPFS_SHARED_API_CODE_SIZE), used, naked))
 static void end_xipfs_shared_api_code_in_function(void){}
 
-__attribute__((section(".xipfs_shared_api_data")))
 const void *xipfs_safe_exec_syscalls_wrappers[XIPFS_SYSCALL_MAX] = {
     [         XIPFS_SYSCALL_EXIT] = exit_wrapper,
     [      XIPFS_SYSCALL_VPRINTF] = vprintf_wrapper,
