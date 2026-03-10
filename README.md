@@ -1,61 +1,61 @@
-# The eXecute In-Place File System
+# xipfs
 
-## Description
+`xipfs` (eXecute-In-Place File System) is a small flash-oriented file system for embedded targets.
+Its main goal is to store binaries in non-volatile memory and execute them in place, without copying code to RAM first.
 
-`xipfs` is a file system designed to streamline post-issuance software
-deployment. `xipfs` allows direct execution of programs from flash
-memory, eliminating the need for prior copying to RAM. This approach
-conserves memory space and accelerates boot times, as the
-microcontroller can run code directly from storage memory without
-preloading into RAM.
+## Highlights
 
-The `xipfs` structure is based on a linked list, where each file
-occupies at least one flash memory page. To prevent fragmentation, when
-a file is deleted, subsequent files are shifted to fill the vacant
-space.
+- Execute code directly from flash (XIP workflow).
+- Compact on-media layout based on flash-page allocation.
+- Deterministic storage behavior (no journaling layer).
+- Workstation build target to generate and manipulate `.flash` images offline.
 
-`xipfs` is compatible with all microcontrollers featuring addressable
-flash memory and most operating systems, provided they implement the
-necessary functions to interact with the flash controller.
+## Repository Layout
 
-## Limitations
+- `include/` and `src/`: core xipfs library.
+- `boards/`: board-specific configuration.
+- `workstation/`: host build target used for image tooling and tests.
+- `tools/`: `mkxipfs` command-line utility.
 
-`xipfs` has the following limitations:
+## mkxipfs Tool
 
-- No journaling: `xipfs` doesn't provide journaling. Without journaling,
-  the file system cannot keep track of changes in a way that allows for
-  recovery in the event of a crash or power failure. This can lead to
-  data corruption and loss.
+`mkxipfs` is a host-side tool that operates on a flash image file and reuses the same xipfs library logic.
 
-- No checksums: `xipfs` doesn't provide checksums. The lack of checksums
-  means that the file system cannot verify the integrity of files. This
-  increases the risk of undetected data corruption, as there is no
-  mechanism to ensure that files have not been altered or damaged.
+Current commands include:
 
-- Per mountpoint file system lock: `xipfs` needs a file system lock per
-  mountpoint. Such a mechanism can lead to performance bottlenecks,
-  as it prevents multiple threads from accessing the file system montpoint
-  simultaneously.
+- `create <file.flash> <size>`
+- `build <file.flash> <host_dir> [size]`
+- `ls [-l] [path]`
+- `tree [path]`
+- `put <host_file> <xipfs_file>` or `put <xipfs_file>` (stdin)
+- `get <xipfs_file> <host_file>` or `get <xipfs_file>` (stdout)
+- `mkdir <xipfs_dir>`
+- `rm <xipfs_file>`
+- `rmdir <xipfs_dir>`
+- `mv <src> <dst>`
+- `test`
 
-- Fixed file size: `xipfs` provide fixed file size. By default, a file
-  created using `vfs_open(2)` has a fixed space reserved in flash that
-  is the size of a flash page. This size cannot be extended later. To
-  create a file larger than the fixed size of one flash page, the
-  `mk(1)` command or the `xipfs_new_file(3)` function must be used.
+For commands working on an existing image, select it with:
 
-- Limited character set: `xipfs` supports only a subset of 7-bit ASCII
-  characters, specifically `[0-9A-Za-z\/\.\-_]`.
+- `--flash <file.flash>`
+- or environment variable `XIPFS_FILE_IMAGE`
 
-- Limited path length: `xipfs` maximum path length is 64 characters.
+## Build
 
-## Tested cards
+Library (workstation target):
 
-`xipfs` is expected to be compatible with all boards that feature
-addressable NVM. However, only the `DWM1001` board has been tested and
-is confirmed to function correctly.
+```sh
+make BOARD=workstation
+```
 
-## Funding
+Tool:
 
-The `xipfs` project is part of the TinyPART project funded by the
-MESRI-BMBF German-French cybersecurity program under grant agreements
-n°ANR-20-CYAL-0005 and 16KIS1395K.
+```sh
+make -C tools
+```
+
+## Notes and Constraints
+
+- On-media offsets are 32-bit (`xipfs_off_t`), so generated images keep embedded-target compatibility.
+- File-system behavior is designed for flash memory constraints, not for desktop POSIX semantics.
+- This project is suitable for controlled embedded deployments where simplicity and predictability matter.
