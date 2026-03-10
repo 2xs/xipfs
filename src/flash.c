@@ -45,7 +45,7 @@
  *
  * @return The MCU flash memory base address
  */
-unsigned
+uintptr_t
 xipfs_flash_base_addr(void)
 {
     return XIPFS_NVM_BASE;
@@ -56,7 +56,7 @@ xipfs_flash_base_addr(void)
  *
  * @return The MCU flash memory end address
  */
-unsigned
+uintptr_t
 xipfs_flash_end_addr(void)
 {
     return XIPFS_NVM_BASE + XIPFS_NVM_NUMOF * XIPFS_NVM_PAGE_SIZE;
@@ -167,7 +167,8 @@ xipfs_flash_page_overflow(const void *addr, size_t n)
 int
 xipfs_flash_write_unaligned(void *dest, const void *src, size_t n)
 {
-    uint32_t mod, shift, addr, addr4, val4;
+    uintptr_t mod, shift, addr, addr4;
+    uint32_t val4;
     uint8_t byte;
     size_t i;
 
@@ -181,10 +182,10 @@ xipfs_flash_write_unaligned(void *dest, const void *src, size_t n)
         byte = ((uint8_t *)src)[i];
 
         /* cast the address to a 4-bytes integer */
-        addr = (uint32_t)dest + i;
+        addr = (uintptr_t)dest + i;
 
         /* calculate the modulus from the address */
-        mod = addr & ((uint32_t)XIPFS_NVM_WRITE_BLOCK_ALIGNMENT-1);
+        mod = addr & ((uintptr_t)XIPFS_NVM_WRITE_BLOCK_ALIGNMENT-1);
 
         /* align the address to the previous multiple of 4 */
         addr4 = addr & ~mod;
@@ -193,7 +194,7 @@ xipfs_flash_write_unaligned(void *dest, const void *src, size_t n)
         val4 = *(uint32_t *)addr4;
 
         /* calculate the byte shift value */
-        shift = mod << ((uint32_t)XIPFS_NVM_WRITE_BLOCK_SIZE-1);
+        shift = mod << ((uintptr_t)XIPFS_NVM_WRITE_BLOCK_SIZE-1);
 
         /* clear the byte corresponding to the shift */
         val4 &= ~((uint32_t)XIPFS_NVM_ERASE_STATE << shift);
@@ -226,12 +227,12 @@ xipfs_flash_write_unaligned(void *dest, const void *src, size_t n)
 int
 xipfs_flash_is_erased_page(unsigned page)
 {
-    char *ptr;
+    const unsigned char *ptr;
     size_t i;
 
     ptr = xipfs_nvm_addr(page);
     for (i = 0; i < XIPFS_NVM_PAGE_SIZE; i++) {
-        if (ptr[i] != XIPFS_NVM_ERASE_STATE) {
+        if (ptr[i] != (unsigned char)XIPFS_NVM_ERASE_STATE) {
             return 0;
         }
     }

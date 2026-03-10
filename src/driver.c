@@ -207,6 +207,7 @@ sync_remove_file(xipfs_mount_t *mp, xipfs_file_t *filp)
     if (xipfs_fs_remove(filp) < 0) {
         return -1;
     }
+    xipfs_buffer_invalidate();
     xipfs_desc_update(mp, filp, reserved);
 
     return 0;
@@ -911,14 +912,18 @@ xipfs_mount(xipfs_mount_t *mp)
             return -EIO;
         }
     }
-    /* ensure pages after the last file are erased */
+    end = (int *)((uintptr_t)mp->page_addr + mp->page_num *
+        XIPFS_NVM_PAGE_SIZE);
+    /* ensure pages after the last file are erased.
+     * A full filesystem is valid: there is no free tail region to scan. */
     if ((start = (int *)xipfs_fs_tail_next(mp)) == NULL) {
-        if (xipfs_errno != XIPFS_OK) {
+        if (xipfs_errno == XIPFS_EFULL) {
+            start = end;
+        }
+        else if (xipfs_errno != XIPFS_OK) {
             return -EIO;
         }
     }
-    end = (int *)((uintptr_t)mp->page_addr + mp->page_num *
-        XIPFS_NVM_PAGE_SIZE);
     while (start < end) {
         if (*start++ != (int)XIPFS_FLASH_ERASE_STATE) {
             return -EIO;
@@ -1597,10 +1602,8 @@ xipfs_execv_check(xipfs_mount_t *mp, const char *path,
 
     (void)xipfs_close(mp, &descp);
 
-#define CRT0_MAGIC_NUMBER_AND_VERSION (0xFACADE12)
-    if (last_uint32_value != CRT0_MAGIC_NUMBER_AND_VERSION)
+    if (last_uint32_value != XIPFS_CRT0_MAGIC_NUMBER_AND_VERSION)
         return -EBADF;
-#undef CRT0_MAGIC_NUMBER_AND_VERSION
 
     return 0;
 }

@@ -36,11 +36,17 @@
 #define XIPFS_H
 
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdarg.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #ifndef RIOT_VERSION
 
 #include "xipfs_config.h"
+
+/* Non-RIOT builds provide their own synchronization primitives. */
+typedef void mutex_t;
 
 #else /* !RIOT_VERSION */
 
@@ -61,6 +67,13 @@
  * @brief The magic number of an xipfs file system
  */
 #define XIPFS_MAGIC (0xf9d3b6cbUL)
+
+/**
+ * @def XIPFS_CRT0_MAGIC_NUMBER_AND_VERSION
+ *
+ * @brief Marker used at the end of executable FAE payloads.
+ */
+#define XIPFS_CRT0_MAGIC_NUMBER_AND_VERSION (0xFACADE12UL)
 
 /**
  * @def XIPFS_FILESIZE_SLOT_MAX
@@ -156,6 +169,10 @@
 #error "xipfs_config.h: XIPFS_MAGIC undefined"
 #endif /* !XIPFS_MAGIC */
 
+#ifndef XIPFS_CRT0_MAGIC_NUMBER_AND_VERSION
+#define XIPFS_CRT0_MAGIC_NUMBER_AND_VERSION (0xFACADE12UL)
+#endif
+
 #ifndef XIPFS_FILESIZE_SLOT_MAX
 #error "xipfs_config.h: XIPFS_FILESIZE_SLOT_MAX undefined"
 #endif /* !XIPFS_FILESIZE_SLOT_MAX */
@@ -197,13 +214,23 @@ extern "C" {
 #endif
 
 /**
+ * @brief Type used to store on-media xipfs offsets.
+ */
+typedef uint32_t xipfs_off_t;
+
+/**
+ * @brief Erased value for on-media offsets.
+ */
+#define XIPFS_OFF_ERASED ((xipfs_off_t)0xffffffffUL)
+
+/**
  * @brief File data structure for xipfs
  */
 typedef struct xipfs_file_s {
     /**
-     * The address of the next file
+     * Offset from XIPFS_NVM_BASE to the next file.
      */
-    struct xipfs_file_s *next;
+    xipfs_off_t next;
     /**
      * The path of the file relative to the mount point
      */
@@ -211,14 +238,14 @@ typedef struct xipfs_file_s {
     /**
      * The actual size reserved for the file
      */
-    size_t reserved;
+    uint32_t reserved;
     /**
      * The table lists the file sizes, with the last entry
      * reflecting the current size of the file. This method
      * helps to avoid flashing the flash page every time there
      * is a change in size
      */
-    size_t size[XIPFS_FILESIZE_SLOT_MAX];
+    uint32_t size[XIPFS_FILESIZE_SLOT_MAX];
     /**
      * Execution right
      */
@@ -252,6 +279,18 @@ typedef struct xipfs_file_desc_s {
 typedef struct xipfs_dirent_s {
     char dirname[XIPFS_PATH_MAX];
 } xipfs_dirent_t;
+
+static inline xipfs_off_t
+xipfs_ptr_to_off(const void *ptr)
+{
+    return (xipfs_off_t)((uintptr_t)ptr - (uintptr_t)XIPFS_NVM_BASE);
+}
+
+static inline void *
+xipfs_off_to_ptr(xipfs_off_t off)
+{
+    return (void *)((uintptr_t)XIPFS_NVM_BASE + (uintptr_t)off);
+}
 
 struct xipfs_statvfs {
     unsigned long f_bsize;   /**< File system block size. */

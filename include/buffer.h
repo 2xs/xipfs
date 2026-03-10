@@ -40,6 +40,7 @@ extern "C" {
 #endif
 
 int xipfs_buffer_flush(void);
+void xipfs_buffer_invalidate(void);
 int xipfs_buffer_read(void *dest, const void *src, size_t len);
 int xipfs_buffer_read_32(unsigned *dest, void *src);
 int xipfs_buffer_read_8(char *dest, void *src);

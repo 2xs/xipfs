@@ -35,6 +35,8 @@
 #ifndef XIPFS_FLASH_H
 #define XIPFS_FLASH_H
 
+#include <stdint.h>
+
 /**
  * @def XIPFS_FLASH_ERASE_STATE
  *
@@ -50,8 +52,8 @@
 extern "C" {
 #endif
 
-unsigned xipfs_flash_base_addr(void);
-unsigned xipfs_flash_end_addr(void);
+uintptr_t xipfs_flash_base_addr(void);
+uintptr_t xipfs_flash_end_addr(void);
 int xipfs_flash_erase_page(unsigned page);
 int xipfs_flash_in(const void *addr);
 int xipfs_flash_is_erased_page(unsigned page);

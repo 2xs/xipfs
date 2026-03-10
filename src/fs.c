@@ -98,7 +98,7 @@ xipfs_fs_head(xipfs_mount_t *mp)
     xipfs_file_t *headp;
 
     headp = mp->page_addr;
-    if ((int)headp->next == (int)XIPFS_FLASH_ERASE_STATE) {
+    if (headp->next == XIPFS_OFF_ERASED) {
         /* no file in the file system */
         return NULL;
     }
@@ -128,20 +128,22 @@ xipfs_file_t *
 xipfs_fs_next(xipfs_file_t *filp)
 {
     xipfs_file_t *nextp;
+    xipfs_off_t filp_off;
 
     if (xipfs_file_filp_check(filp) < 0) {
         /* xipfs_errno was set */
         return NULL;
     }
 
-    if (filp->next == filp) {
+    filp_off = xipfs_ptr_to_off(filp);
+    if (filp->next == filp_off) {
         /* no more files - file system full */
         return NULL;
     }
 
-    nextp = filp->next;
+    nextp = xipfs_off_to_ptr(filp->next);
 
-    if ((int)nextp->next == (int)XIPFS_FLASH_ERASE_STATE) {
+    if (nextp->next == XIPFS_OFF_ERASED) {
         /* no more files - file system not full */
         return NULL;
     }
@@ -209,6 +211,7 @@ xipfs_file_t *
 xipfs_fs_tail_next(xipfs_mount_t *mp)
 {
     xipfs_file_t *tailp;
+    xipfs_off_t tail_off;
 
     xipfs_errno = XIPFS_OK;
     if ((tailp = xipfs_fs_tail(mp)) == NULL) {
@@ -219,12 +222,13 @@ xipfs_fs_tail_next(xipfs_mount_t *mp)
         /* no file in the file system */
         return mp->page_addr;
     }
-    if (tailp->next == tailp) {
+    tail_off = xipfs_ptr_to_off(tailp);
+    if (tailp->next == tail_off) {
         xipfs_errno = XIPFS_EFULL;
         return NULL;
     }
 
-    return tailp->next;
+    return xipfs_off_to_ptr(tailp->next);
 }
 
 /**
@@ -265,7 +269,8 @@ int
 xipfs_fs_free_pages(xipfs_mount_t *mp)
 {
     xipfs_file_t *headp, *tailp;
-    int used, free;
+    size_t used;
+    int free;
 
     xipfs_errno = XIPFS_OK;
     if ((headp = xipfs_fs_head(mp)) == NULL) {
@@ -280,9 +285,9 @@ xipfs_fs_free_pages(xipfs_mount_t *mp)
         /* xipfs_errno was set */
         return -1;
     }
-    used  = (unsigned)tailp;
-    used += (unsigned)tailp->reserved;
-    used -= (unsigned)headp;
+    used = (uintptr_t)tailp;
+    used += tailp->reserved;
+    used -= (uintptr_t)headp;
     used /= XIPFS_NVM_PAGE_SIZE;
     free = mp->page_num - used;
 
@@ -319,7 +324,7 @@ xipfs_fs_new_file(xipfs_mount_t *mp, const char *path, size_t size,
     int free_pages, reserved_pages;
     xipfs_file_t file, *filp;
     size_t reserved;
-    void *next;
+    xipfs_off_t next;
 
     if (xipfs_file_path_check(path) < 0) {
         /* xipfs_errno was set */
@@ -346,9 +351,9 @@ xipfs_fs_new_file(xipfs_mount_t *mp, const char *path, size_t size,
     reserved_pages = reserved / XIPFS_NVM_PAGE_SIZE;
 
     if (reserved_pages < free_pages) {
-        next = (char *)filp + reserved;
+        next = xipfs_ptr_to_off((char *)filp + reserved);
     } else if (reserved_pages == free_pages) {
-        next = filp;
+        next = xipfs_ptr_to_off(filp);
     } else {
         xipfs_errno = XIPFS_ENOSPACE;
         return NULL;
@@ -422,8 +427,11 @@ xipfs_fs_remove(void *dst)
         }
         /* copy and fix up the file structure */
         (void)memcpy(&file, src, sizeof(file));
-        size = (uintptr_t)((xipfs_file_t *)src)->next - (uintptr_t)src;
-        file.next = (xipfs_file_t *)((uintptr_t)dst + size);
+        /* Use reserved size, not next-offset delta.
+         * For a tail file in a full filesystem, next == self, and the
+         * delta would be 0, which breaks relocation metadata. */
+        size = ((xipfs_file_t *)src)->reserved;
+        file.next = xipfs_ptr_to_off((char *)dst + size);
         if (xipfs_flash_write_unaligned(dst, &file, sizeof(file)) < 0) {
             /* xipfs_errno was set */
             return -1;
