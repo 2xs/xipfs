@@ -32,11 +32,12 @@
 ###############################################################################
 
 ifndef RIOT_CFLAGS
+ifeq ($(strip $(BOARD)),)
 ifeq ("$(wildcard toolchain.mk)","")
-    $(error "Run ./configure first")
+    $(error "Run ./configure first or set BOARD=<name>")
 endif
-
 include toolchain.mk
+endif
 include boards/$(BOARD)/toolchain.mk
 endif # RIOT_CFLAGS
 
@@ -46,8 +47,13 @@ AR              = $(PREFIX)ar
 CFLAGS          = -Wall
 CFLAGS         += -Wextra
 CFLAGS         += -Werror
+ifeq ($(BOARD),workstation)
+CFLAGS         += -std=c11
+CFLAGS         += -Wno-unused-function
+else
 CFLAGS         += -ffreestanding
 CFLAGS         += -mthumb
+endif
 CFLAGS         += $(BOARD_CFLAGS)
 ifndef DEBUG
 CFLAGS         += -Os
@@ -65,6 +71,9 @@ endif # RIOT_CFLAGS
 
 TARGET          = xipfs
 SOURCES         = $(wildcard src/*.c)
+ifeq ($(BOARD),workstation)
+SOURCES         := $(filter-out src/mpu_driver.c src/shared_api.c,$(SOURCES))
+endif
 OBJECTS         = $(SOURCES:.c=.o)
 
 OBJS = $(addprefix $(BOARD)/,$(OBJECTS))
