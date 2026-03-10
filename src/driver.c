@@ -996,7 +996,7 @@ xipfs_unlink(xipfs_mount_t *mp, const char *name)
     if (xipath.parent == 1 && !(xipath.dirname[0] ==
             '/' && xipath.dirname[1] == '\0')) {
         if (xipfs_fs_new_file(mp, xipath.dirname,
-                XIPFS_NVM_PAGE_SIZE, 0) == NULL) {
+                0, 0) == NULL) {
             return -EIO;
         }
     }
@@ -1063,7 +1063,7 @@ xipfs_mkdir(xipfs_mount_t *mp, const char *name, mode_t mode)
         }
     }
     if (xipfs_fs_new_file(mp, xipath.path,
-            XIPFS_NVM_PAGE_SIZE, 0) == NULL) {
+            0, 0) == NULL) {
         return -EIO;
     }
 
@@ -1121,7 +1121,7 @@ xipfs_rmdir(xipfs_mount_t *mp, const char *name)
     if (xipath.parent == 1 && !(xipath.dirname[0] ==
             '/' && xipath.dirname[1] == '\0')) {
         if (xipfs_fs_new_file(mp, xipath.dirname,
-                XIPFS_NVM_PAGE_SIZE, 0) == NULL) {
+                0, 0) == NULL) {
             return -EIO;
         }
     }
@@ -1326,7 +1326,7 @@ xipfs_rename(xipfs_mount_t *mp, const char *from_path,
             '/' && xipaths[0].dirname[1] == '\0')) {
         if (strcmp(xipaths[0].dirname, xipaths[1].dirname) != 0) {
             if (xipfs_fs_new_file(mp, xipaths[0].dirname,
-                    XIPFS_NVM_PAGE_SIZE, 0) == NULL) {
+                    0, 0) == NULL) {
                 return -EIO;
             }
         }
