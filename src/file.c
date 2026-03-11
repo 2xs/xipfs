@@ -305,7 +305,8 @@ typedef struct memories_context_s {
 } memories_context_t;
 
 #if defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
-extern uint32_t _xipfs_shared_api_code_out_start;
+extern const void *xipfs_shared_api_code_start;
+extern const void *xipfs_shared_api_code_end;
 #endif
 
 /*
@@ -1306,14 +1307,20 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
         return -1;
     }
 
-    /* Check memories_context members and filp alignments */
+    /* Check memories_context members, filp alignments and shared API start address. */
     if (!(
               ((uint32_t)memories_context.stkbot % EXEC_STACKSIZE_DEFAULT == 0)
            && ((uint32_t)memories_context.ram_start % 4096 == 0)
            && ((uint32_t)filp % XIPFS_NVM_PAGE_SIZE == 0)
-           && ((uint32_t)&_xipfs_shared_api_code_out_start % XIPFS_SHARED_API_CODE_ALIGNMENT == 0)
+           && (((uint32_t)xipfs_shared_api_code_start & ~1) % XIPFS_SHARED_API_CODE_ALIGNMENT == 0)
          )) {
         xipfs_errno = XIPFS_EALIGN;
+        return -1;
+    }
+
+    const uint32_t xipfs_shared_api_code_size = ((uintptr_t)xipfs_shared_api_code_end) - ((uintptr_t)xipfs_shared_api_code_start);
+    if (xipfs_shared_api_code_size != XIPFS_SHARED_API_CODE_SIZE) {
+        xipfs_errno = XIPFS_ESHAREDAPISIZE;
         return -1;
     }
 
@@ -1355,9 +1362,10 @@ int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
     /*
      * Set MPU region for shared api code.
      */
+    uintptr_t shared_api_code_start = ((uintptr_t)xipfs_shared_api_code_start) & ~1;
     if (xipfs_mpu_configure_region(
             XIPFS_MPU_REGION_ENUM_SHARED_API,
-            &_xipfs_shared_api_code_out_start, XIPFS_SHARED_API_CODE_SIZE,
+            (void *)shared_api_code_start, XIPFS_SHARED_API_CODE_SIZE,
             XIPFS_MPU_REGION_EXC_OK, XIPFS_MPU_REGION_AP_RO_RO) < 0) {
 
         on_mpu_setting_error(mpu_was_enabled);

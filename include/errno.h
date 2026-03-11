@@ -137,6 +137,11 @@ enum xipfs_errno_e {
     XIPFS_ESHAREDAPIREGION,
 
     /**
+     * Shared API code size is not the expected one.
+     */
+    XIPFS_ESHAREDAPISIZE,
+
+    /**
      * Failed to enable MPU
      */
     XIPFS_EENABLEMPU,

@@ -79,6 +79,7 @@ static const char *xipfs_errno_to_str[XIPFS_ENUM] = {
     [XIPFS_EDATAREGION] = "failed to set data MPU region",
     [XIPFS_ESTACKREGION] = "failed to set stack MPU region",
     [XIPFS_ESHAREDAPIREGION] = "failed to set shared api MPU region",
+    [XIPFS_ESHAREDAPISIZE] = "invalid shared api size",
     [XIPFS_EENABLEMPU] = "failed to enable MPU",
     [XIPFS_EDISABLEMPU] = "failed to enable MPU",
     [XIPFS_ENOSAFESUPPORT] = "no safe execution support",

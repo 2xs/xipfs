@@ -220,6 +220,15 @@ static void *memset_wrapper(void *m, int c, size_t n) {
 __attribute__((section(".xipfs_shared_api_code_in"), aligned(XIPFS_SHARED_API_CODE_SIZE), used, naked))
 static void end_xipfs_shared_api_code_in_function(void){}
 
+/**
+ * Those two variables are used in file.c to set up an MPU region for shared API code.
+ * Because RIOT reviewers are relunctant to modify cortex-m common linkscript, we had to find a workaround.
+ * It relies heavily onto the assumption that compilers respect the functions declaration order to compute
+ * the related memory layout in outputted file.
+ */
+const void *xipfs_shared_api_code_start = start_xipfs_shared_api_code_in_function;
+const void *xipfs_shared_api_code_end = end_xipfs_shared_api_code_in_function;
+
 const void *xipfs_safe_exec_syscalls_wrappers[XIPFS_SYSCALL_MAX] = {
     [         XIPFS_SYSCALL_EXIT] = exit_wrapper,
     [      XIPFS_SYSCALL_VPRINTF] = vprintf_wrapper,
