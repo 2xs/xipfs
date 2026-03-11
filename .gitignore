@@ -1,3 +1,5 @@
 /toolchain.mk
 *.o
 *.a
+/tools/bin/
+*.flash
