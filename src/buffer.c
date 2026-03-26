@@ -57,6 +57,10 @@ typedef enum xipfs_buffer_state_e {
      */
     XIPFS_BUFFER_OK,
     /**
+     * A valid buffer state with RAM writes not commited to flash.
+     */
+    XIPFS_BUFFER_DIRTY,
+    /**
      *  An invalid buffer state
      */
     XIPFS_BUFFER_KO,
@@ -83,7 +87,7 @@ typedef struct xipfs_buf_s {
     /**
      * The flash page address loaded into the I/O buffer
      */
-    char *page_addr;
+    const char *page_addr;
 } xipfs_buf_t;
 
 /**
@@ -122,22 +126,10 @@ xipfs_buffer_page_changed(unsigned num)
  * @return Returns one if the buffer requires flushing or a
  * zero otherwise
  */
-static int
+static inline int
 xipfs_buffer_need_flush(void)
 {
-    size_t i;
-
-    if (xipfs_buf.state == XIPFS_BUFFER_KO) {
-        return 0;
-    }
-
-    for (i = 0; i < XIPFS_NVM_PAGE_SIZE; i++) {
-        if (xipfs_buf.buf[i] != xipfs_buf.page_addr[i]) {
-            return 1;
-        }
-    }
-
-    return 0;
+    return (xipfs_buf.state == XIPFS_BUFFER_DIRTY);
 }
 
 /**
@@ -151,23 +143,31 @@ xipfs_buffer_need_flush(void)
 int
 xipfs_buffer_flush(void)
 {
+    size_t i = 0;
+    unsigned int flash_value;
 
-    if (xipfs_buffer_need_flush() == 0) {
+    if (xipfs_buf.state != XIPFS_BUFFER_DIRTY) {
         /* no need to flush the buffer */
         return 0;
     }
 
-    if (xipfs_flash_erase_page(xipfs_buf.page_num) < 0) {
-        /* xipfs_errno was set */
-        return -1;
+    // Is a flashpage erase needed ?
+    for (i = 0; i < (XIPFS_NVM_PAGE_SIZE / sizeof(flash_value)); ++i) {
+        if ( ((~xipfs_buf.page_addr[i]) & xipfs_buf.buf[i]) != 0 ) {
+            if (xipfs_flash_erase_page(xipfs_buf.page_num) < 0) {
+                /* xipfs_errno was set */
+                return -1;
+            }
+
+            break;
+        }
     }
 
     if(flashpage_write_and_verify(xipfs_buf.page_num, xipfs_buf.buf) != FLASHPAGE_OK) {
         return -1;
     }
 
-    (void)memset(&xipfs_buf, 0, sizeof(xipfs_buf));
-    xipfs_buf.state = XIPFS_BUFFER_KO;
+    xipfs_buf.state = XIPFS_BUFFER_OK;
 
     return 0;
 }
@@ -188,12 +188,12 @@ xipfs_buffer_flush(void)
  * I/O buffer
  */
 static void
-xipfs_buffer_load(unsigned num, void *addr)
+xipfs_buffer_load(unsigned num, const void *addr)
 {
     size_t i;
 
     for (i = 0; i < XIPFS_NVM_PAGE_SIZE; i++) {
-        xipfs_buf.buf[i] = ((char *)addr)[i];
+        xipfs_buf.buf[i] = ((const char *)addr)[i];
     }
     xipfs_buf.page_num = num;
     xipfs_buf.page_addr = addr;
@@ -217,12 +217,12 @@ xipfs_buffer_load(unsigned num, void *addr)
 int
 xipfs_buffer_read(void *dest, const void *src, size_t len)
 {
-    void *addr, *ptr;
+    const void *addr, *ptr;
     size_t pos, i;
     unsigned num;
 
     for (i = 0; i < len; i++) {
-        ptr = (char *)src + i;
+        ptr = (const char *)src + i;
         if (xipfs_flash_in(ptr) < 0) {
             /* xipfs_errno was set */
             return -1;
@@ -321,6 +321,7 @@ xipfs_buffer_write(void *dest, const void *src, size_t len)
         }
         pos = (uintptr_t)ptr % XIPFS_NVM_PAGE_SIZE;
         xipfs_buf.buf[pos] = ((char *)src)[i];
+        xipfs_buf.state = XIPFS_BUFFER_DIRTY;
     }
 
     return 0;

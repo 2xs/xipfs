@@ -920,26 +920,36 @@ off_t
 xipfs_file_get_size_(xipfs_file_t *filp)
 {
     size_t i = 1;
-    off_t size;
+    off_t size, last_size;
 
-    if (filp->size[0] == (size_t)XIPFS_FLASH_ERASE_STATE) {
+    if (xipfs_buffer_read_32((unsigned *)&size, &(filp->size[0])) < 0) {
+        // xipfs_errno has been set.
+        return -1;
+    }
+
+    if (size == (off_t)XIPFS_FLASH_ERASE_STATE) {
         /* file size not in flash yet */
         return 0;
     }
 
+    // Find last occupied slot.
+    last_size = size;
     while (i < XIPFS_FILESIZE_SLOT_MAX) {
-        if (filp->size[i] == (size_t)XIPFS_FLASH_ERASE_STATE) {
-            return (off_t)filp->size[i-1];
+        if (xipfs_buffer_read_32((unsigned *)&size, &(filp->size[i])) < 0) {
+            // xipfs_errno has been set.
+            return -1;
         }
+
+        if (size == (off_t)XIPFS_FLASH_ERASE_STATE) {
+            return last_size;
+        }
+
         i++;
+        last_size = size;
     }
 
-    if (xipfs_buffer_read_32((unsigned *)&size, &filp->size[i-1]) < 0) {
-        /* xipfs_errno was set */
-        return -1;
-    }
-
-    return size;
+    // We've browsed all the slots array. Return the last read size.
+    return last_size;
 }
 
 /**
@@ -983,22 +993,46 @@ xipfs_file_get_size(xipfs_file_t *filp)
 int
 xipfs_file_set_size(xipfs_file_t *filp, off_t size)
 {
-    size_t i = 1;
+    size_t i = 0;
+    off_t flash_value;
 
     if (xipfs_file_filp_check(filp) < 0) {
         /* xipfs_errno was set */
         return -1;
     }
 
+    if ((size_t)size>filp->reserved) {
+        xipfs_errno = XIPFS_EOUTNVM;
+        return -1;
+    }
+
+    // Find the first free size slot.
     while (i < XIPFS_FILESIZE_SLOT_MAX) {
-        if (filp->size[i] != (size_t)XIPFS_FLASH_ERASE_STATE) {
-            break;
+        if (xipfs_buffer_read_32((unsigned int *)&flash_value, &(filp->size[i])) < 0) {
+            // xipfs_errno has been set.
+            return -1;
+        }
+        if (flash_value == (off_t)XIPFS_FLASH_ERASE_STATE) {
+            goto write_size;
         }
         i++;
     }
-    i %= XIPFS_FILESIZE_SLOT_MAX;
 
-    if (xipfs_buffer_write_32(&filp->size[i], size) < 0) {
+    // No free slot, reinit the slots array, except from the first slot.
+    i = 1;
+    while (i < XIPFS_FILESIZE_SLOT_MAX) {
+        if (xipfs_buffer_write_32(&(filp->size[i]), (int32_t)XIPFS_FLASH_ERASE_STATE) < 0) {
+            // xipfs_errno has been set.
+            return -1;
+        }
+        i++;
+    }
+
+    // restart at slot 0.
+    i = 0;
+
+write_size :
+    if (xipfs_buffer_write_32(&(filp->size[i]), size) < 0) {
         /* xipfs_errno was set */
         return -1;
     }
