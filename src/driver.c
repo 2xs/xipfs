@@ -575,9 +575,16 @@ xipfs_read(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
      * This code is used to retrieve the xipfs_mount_t where it is not provided
      */
     if ( (descp != NULL) && ((uintptr_t)descp->filp == (uintptr_t)xipfs_infos_file) ) {
+        if (nbytes != sizeof(xipfs_mount_t)) {
+            return -EINVAL;
+        }
+        if ((nbytes > 0) && (descp->pos >= (off_t)sizeof(xipfs_mount_t))) {
+            return -EIO;
+        }
         for (i = 0; i < nbytes && i < sizeof(xipfs_mount_t); i++) {
             ((char *)dest)[i] = ((char *)mp)[i];
         }
+        descp->pos = sizeof(xipfs_mount_t);
         return i;
     }
 
@@ -602,6 +609,9 @@ xipfs_read(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
             return -EACCES;
     }
     if ((size = xipfs_file_get_size(descp->filp)) < 0) {
+        return -EIO;
+    }
+    if ((nbytes > 0) && (descp->pos >= size)) {
         return -EIO;
     }
     for (i = 0; i < nbytes && descp->pos < size; i++) {
@@ -645,6 +655,9 @@ xipfs_write(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     }
     if ((max_pos = xipfs_file_get_max_pos(descp->filp)) < 0) {
         return -EIO;
+    }
+    if ((nbytes > 0) && (descp->pos >= max_pos)) {
+        return -EDQUOT;
     }
     for (i = 0; i < nbytes && descp->pos < max_pos; i++) {
         if (xipfs_file_write_8(descp->filp, descp->pos,
