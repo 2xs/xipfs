@@ -227,7 +227,7 @@ sync_remove_file(xipfs_mount_t *mp, xipfs_file_t *filp)
 static int
 xipfs_mp_check(xipfs_mount_t *mp)
 {
-    uint32_t page;
+    unsigned int page;
 
     if (mp == NULL) {
         return -EFAULT;
@@ -241,11 +241,29 @@ xipfs_mp_check(xipfs_mount_t *mp)
     if (mp->page_num == 0) {
         return -EINVAL;
     }
+#if (XIPFS_NVM_NUMOF <= 0)
+#error "XIPFS_NVM_NUMOF <= 0"
+#endif
+
+#if (XIPFS_NVM_PAGE_SIZE <= 0)
+#error "XIPFS_NVM_PAGE_SIZE <= 0"
+#endif
+
+#if (! (XIPFS_FILE_POSITION_MAX > (0U)) )
+#error "XIPFS_FILE_POSITION_MAX <= 0"
+#endif
+    const size_t filesystem_max_pages_count = (size_t)XIPFS_FILE_POSITION_MAX / (size_t)XIPFS_NVM_PAGE_SIZE;
+    if (filesystem_max_pages_count == 0) {
+        return -EINVAL;
+    }
+    if (filesystem_max_pages_count < (size_t)XIPFS_NVM_NUMOF) {
+        return -EINVAL;
+    }
     if (mp->page_num > XIPFS_NVM_NUMOF) {
         return -EINVAL;
     }
     page = xipfs_nvm_page(mp->page_addr);
-    if (page + mp->page_num > XIPFS_NVM_NUMOF) {
+    if (((unsigned int)XIPFS_NVM_NUMOF - page) < mp->page_num) {
         return -EINVAL;
     }
 

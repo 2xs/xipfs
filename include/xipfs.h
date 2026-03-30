@@ -225,7 +225,7 @@ extern "C" {
  */
 typedef uint32_t xipfs_file_position_t;
 
-#define XIPFS_FILE_POSITION_MAX ((xipfs_file_position_t)(UINT32_MAX>>1))
+#define XIPFS_FILE_POSITION_MAX (UINT32_MAX>>1)
 
 #define XIPFS_FILE_POSITION_FORMAT PRiu32
 
