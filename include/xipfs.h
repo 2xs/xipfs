@@ -37,6 +37,8 @@
 
 #include <fcntl.h>
 #include <stdarg.h>
+#include <limits.h>
+#include <inttypes.h>
 
 #ifndef RIOT_VERSION
 
@@ -195,6 +197,50 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @brief File position type, also used for size and offsets within a file.
+ *
+ * This type has been defined with the following requirements and constraints in mind :
+ * - The type must satisfy cross-platform requirements, then no size_t, ssize_t nor off_t
+ * must be used in data structures that might end up in a binary image of the filesystem.
+ * (u)int(32/64)_t must be preferred over such types to guarantee memory footprints are
+ * the same across all supported platforms.
+ * - Because 32/64bits platforms are targetted, the filesystem size limits will be
+ * those supported by 32 bits architectures. Then the type will be a 32 bits word.
+ * - The filesystem is mainly aimed at non-volatile memory such as (addressable) Flash memory.
+ * In this context, memory pages need to be erased first before writing to them.
+ * That means that a memory word is equal to 0xFFFFFFFF after erasure.
+ * This property is used in the sizes array of xipfs_file_t to distinguish free slots from
+ * occupied ones; the last occupied slot being the current file size.
+ * Since xipfs_file_position_t is aimed at storing both file size and position, uint32_t has been
+ * chosen over int32_t, to prevent from any negative value.
+ * Please note that only 31 bits are meaningful then, which luckily corresponds to INT32_MAX.
+ * - Even without the flash memory constraints, C/POSIX file API relies on size_t, ssize_t and off_t
+ * for file primitive functions, e.g read/write/lseek/stat etc..
+ * Regarding to 32 bits platforms, this implies to use signed and unsigned 32 bits types.
+ * According to POSIX specification for read/write, what happens when nbytes is greater than SSIZE_MAX
+ * is implementation defined; in this context, SSIZE_MAX would be INT32_MAX.
+ * For XIPFS, the choice has been made to support only up till INT32_MAX bytes for writes and reads.
+ */
+typedef uint32_t xipfs_file_position_t;
+
+#define XIPFS_FILE_POSITION_MAX ((xipfs_file_position_t)(UINT32_MAX>>1))
+
+#define XIPFS_FILE_POSITION_FORMAT PRiu32
+
+#define XIPFS_FILE_POSITION_MAX_AS_SIZE_T \
+    ((size_t)XIPFS_FILE_POSITION_MAX)
+
+#define XIPFS_FILE_POSITION_MIN_AS_SSIZE_T \
+    ((ssize_t)0)
+#define XIPFS_FILE_POSITION_MAX_AS_SSIZE_T \
+    ((ssize_t)XIPFS_FILE_POSITION_MAX)
+
+#define XIPFS_FILE_POSITION_MIN_AS_OFF_T \
+    ((off_t)0)
+#define XIPFS_FILE_POSITION_MAX_AS_OFF_T \
+    ((off_t)XIPFS_FILE_POSITION_MAX)
 
 /**
  * @brief File data structure for xipfs
