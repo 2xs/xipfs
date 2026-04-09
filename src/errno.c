@@ -83,7 +83,9 @@ static const char *xipfs_errno_to_str[XIPFS_ENUM] = {
     [XIPFS_EENABLEMPU] = "failed to enable MPU",
     [XIPFS_EDISABLEMPU] = "failed to enable MPU",
     [XIPFS_ENOSAFESUPPORT] = "no safe execution support",
-    [XIPFS_ENOMPUSUPPORT] = "no implementation for this MPU type"
+    [XIPFS_ENOMPUSUPPORT] = "no implementation for this MPU type",
+    [XIPFS_ENULLPOINTER] = "NULL pointer",
+    [XIPFS_EINVALIDSIZE] = "Invalid size"
 };
 
 /**

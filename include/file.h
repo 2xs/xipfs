@@ -48,16 +48,16 @@ int xipfs_file_exec(xipfs_file_t *filp, char *const argv[],
                     const void *user_syscalls[XIPFS_SYSCALL_MAX]);
 int xipfs_file_safe_exec(xipfs_file_t *filp, char *const argv[],
                          const void *user_syscalls[XIPFS_SYSCALL_MAX]);
-int xipfs_file_filp_check(xipfs_file_t *filp);
-off_t xipfs_file_get_max_pos(xipfs_file_t *filp);
-off_t xipfs_file_get_reserved(xipfs_file_t *filp);
-off_t xipfs_file_get_size(xipfs_file_t *filp);
-off_t xipfs_file_get_size_(xipfs_file_t *filp);
+int xipfs_file_filp_check(const xipfs_file_t *filp);
+xipfs_file_position_t xipfs_file_get_max_pos(const xipfs_file_t *filp);
+xipfs_file_position_t xipfs_file_get_reserved(const xipfs_file_t *filp);
+xipfs_file_position_t xipfs_file_get_size(const xipfs_file_t *filp);
+xipfs_file_position_t xipfs_file_get_size_(const xipfs_file_t *filp);
 int xipfs_file_path_check(const char *path);
-int xipfs_file_read_8(xipfs_file_t *filp, off_t pos, char *byte);
+int xipfs_file_read_8(xipfs_file_t *filp, xipfs_file_position_t pos, char *byte);
 int xipfs_file_rename(xipfs_file_t *filp, const char *to_path);
-int xipfs_file_set_size(xipfs_file_t *filp, off_t size);
-int xipfs_file_write_8(xipfs_file_t *filp, off_t pos, char byte);
+int xipfs_file_set_size(xipfs_file_t *filp, xipfs_file_position_t size);
+int xipfs_file_write_8(xipfs_file_t *filp, xipfs_file_position_t pos, char byte);
 
 #ifdef __cplusplus
 }

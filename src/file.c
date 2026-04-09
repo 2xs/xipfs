@@ -763,7 +763,7 @@ xipfs_file_path_check(const char *path)
  * argument is a valid one or a negative value otherwise
  */
 int
-xipfs_file_filp_check(xipfs_file_t *filp)
+xipfs_file_filp_check(const xipfs_file_t *filp)
 {
     if (filp == NULL) {
         xipfs_errno = XIPFS_ENULLF;
@@ -798,6 +798,15 @@ xipfs_file_filp_check(xipfs_file_t *filp)
             xipfs_errno = XIPFS_ELINK;
             return -1;
         }
+        if (   (sizeof(*filp) > XIPFS_FILE_POSITION_MAX_AS_SIZE_T)
+            || ((size_t)filp->reserved < sizeof(*filp)) ) {
+            xipfs_errno = XIPFS_EINVAL;
+            return -1;
+        }
+    }
+    if (filp->reserved < XIPFS_FILE_POSITION_MIN) {
+        xipfs_errno = XIPFS_EINVAL;
+        return -1;
     }
     if (xipfs_file_path_check(filp->path) < 0) {
         /* xipfs_errno was set */
@@ -823,10 +832,10 @@ xipfs_file_filp_check(xipfs_file_t *filp)
  * @return Returns the maximum possible position of the file or
  * a negative value otherwise
  */
-off_t
-xipfs_file_get_max_pos(xipfs_file_t *filp)
+xipfs_file_position_t
+xipfs_file_get_max_pos(const xipfs_file_t *filp)
 {
-    off_t max_pos;
+    xipfs_file_position_t max_pos;
 
     assert(filp != NULL);
 
@@ -834,8 +843,7 @@ xipfs_file_get_max_pos(xipfs_file_t *filp)
         /* xipfs_errno was set */
         return -1;
     }
-    max_pos  = (off_t)filp->reserved;
-    max_pos -= (off_t)sizeof(*filp);
+    max_pos = filp->reserved - (xipfs_file_position_t)sizeof(*filp);
 
     return max_pos;
 }
@@ -852,10 +860,10 @@ xipfs_file_get_max_pos(xipfs_file_t *filp)
  * @return Returns the reserved size of the file or a negative
  * value otherwise
  */
-off_t
-xipfs_file_get_reserved(xipfs_file_t *filp)
+xipfs_file_position_t
+xipfs_file_get_reserved(const xipfs_file_t *filp)
 {
-    off_t reserved;
+    xipfs_file_position_t reserved;
 
     assert(filp != NULL);
 
@@ -863,7 +871,7 @@ xipfs_file_get_reserved(xipfs_file_t *filp)
         /* xipfs_errno was set */
         return -1;
     }
-    reserved = (off_t)filp->reserved;
+    reserved = filp->reserved;
 
     return reserved;
 }
@@ -891,7 +899,7 @@ xipfs_file_erase(xipfs_file_t *filp)
     }
 
     start = xipfs_nvm_page(filp);
-    number = filp->reserved / XIPFS_NVM_PAGE_SIZE;
+    number = (unsigned)filp->reserved / XIPFS_NVM_PAGE_SIZE;
 
     for (i = 0; i < number; i++) {
         if (xipfs_flash_erase_page(start + i) < 0) {
@@ -916,18 +924,18 @@ xipfs_file_erase(xipfs_file_t *filp)
  * @return Returns the current file size or a negative value
  * otherwise
  */
-off_t
-xipfs_file_get_size_(xipfs_file_t *filp)
+xipfs_file_position_t
+xipfs_file_get_size_(const xipfs_file_t *filp)
 {
     size_t i = 1;
-    off_t size, last_size;
+    xipfs_file_position_t size, last_size;
 
     if (xipfs_buffer_read_32((unsigned *)&size, &(filp->size[0])) < 0) {
         // xipfs_errno has been set.
         return -1;
     }
 
-    if (size == (off_t)XIPFS_FLASH_ERASE_STATE) {
+    if (size == (xipfs_file_position_t)XIPFS_FLASH_ERASE_STATE) {
         /* file size not in flash yet */
         return 0;
     }
@@ -940,7 +948,7 @@ xipfs_file_get_size_(xipfs_file_t *filp)
             return -1;
         }
 
-        if (size == (off_t)XIPFS_FLASH_ERASE_STATE) {
+        if (size == (xipfs_file_position_t)XIPFS_FLASH_ERASE_STATE) {
             return last_size;
         }
 
@@ -965,8 +973,8 @@ xipfs_file_get_size_(xipfs_file_t *filp)
  * @return Returns the current file size or a negative value
  * otherwise
  */
-off_t
-xipfs_file_get_size(xipfs_file_t *filp)
+xipfs_file_position_t
+xipfs_file_get_size(const xipfs_file_t *filp)
 {
     if (xipfs_file_filp_check(filp) < 0) {
         /* xipfs_errno was set */
@@ -991,18 +999,23 @@ xipfs_file_get_size(xipfs_file_t *filp)
  * value otherwise
  */
 int
-xipfs_file_set_size(xipfs_file_t *filp, off_t size)
+xipfs_file_set_size(xipfs_file_t *filp, xipfs_file_position_t size)
 {
     size_t i = 0;
-    off_t flash_value;
+    xipfs_file_position_t flash_value;
 
     if (xipfs_file_filp_check(filp) < 0) {
         /* xipfs_errno was set */
         return -1;
     }
 
-    if ((size_t)size>filp->reserved) {
+    if (size > filp->reserved) {
         xipfs_errno = XIPFS_EOUTNVM;
+        return -1;
+    }
+
+    if (size < XIPFS_FILE_POSITION_MIN) {
+        xipfs_errno = XIPFS_EINVALIDSIZE;
         return -1;
     }
 
@@ -1012,7 +1025,7 @@ xipfs_file_set_size(xipfs_file_t *filp, off_t size)
             // xipfs_errno has been set.
             return -1;
         }
-        if (flash_value == (off_t)XIPFS_FLASH_ERASE_STATE) {
+        if (flash_value == (xipfs_file_position_t)XIPFS_FLASH_ERASE_STATE) {
             goto write_size;
         }
         i++;
@@ -1021,7 +1034,7 @@ xipfs_file_set_size(xipfs_file_t *filp, off_t size)
     // No free slot, reinit the slots array, except from the first slot.
     i = 1;
     while (i < XIPFS_FILESIZE_SLOT_MAX) {
-        if (xipfs_buffer_write_32(&(filp->size[i]), (int32_t)XIPFS_FLASH_ERASE_STATE) < 0) {
+        if (xipfs_buffer_write_32(&(filp->size[i]), (unsigned)XIPFS_FLASH_ERASE_STATE) < 0) {
             // xipfs_errno has been set.
             return -1;
         }
@@ -1032,7 +1045,7 @@ xipfs_file_set_size(xipfs_file_t *filp, off_t size)
     i = 0;
 
 write_size :
-    if (xipfs_buffer_write_32(&(filp->size[i]), size) < 0) {
+    if (xipfs_buffer_write_32(&(filp->size[i]), (unsigned)size) < 0) {
         /* xipfs_errno was set */
         return -1;
     }
@@ -1110,9 +1123,9 @@ xipfs_file_rename(xipfs_file_t *filp, const char *to_path)
  * value otherwise
  */
 int
-xipfs_file_read_8(xipfs_file_t *filp, off_t pos, char *byte)
+xipfs_file_read_8(xipfs_file_t *filp, xipfs_file_position_t pos, char *byte)
 {
-    off_t pos_max;
+    xipfs_file_position_t pos_max;
 
     if (xipfs_file_filp_check(filp) < 0) {
         /* xipfs_errno was set */
@@ -1122,9 +1135,9 @@ xipfs_file_read_8(xipfs_file_t *filp, off_t pos, char *byte)
         /* xipfs_errno was set */
         return -1;
     }
-    /* since off_t is defined as a signed integer type, we must
-     * verify that the value is non-negative */
-    if (pos < 0 || pos > pos_max) {
+    /* Since xipfs_file_position_t is defined as an int32_t, we must
+     * verify that the value is non-negative. */
+    if (pos < XIPFS_FILE_POSITION_MIN || pos > pos_max) {
         xipfs_errno = XIPFS_EMAXOFF;
         return -1;
     }
@@ -1153,9 +1166,9 @@ xipfs_file_read_8(xipfs_file_t *filp, off_t pos, char *byte)
  * value otherwise
  */
 int
-xipfs_file_write_8(xipfs_file_t *filp, off_t pos, char byte)
+xipfs_file_write_8(xipfs_file_t *filp, xipfs_file_position_t pos, char byte)
 {
-    off_t pos_max;
+    xipfs_file_position_t pos_max;
 
     if (xipfs_file_filp_check(filp) < 0) {
         /* xipfs_errno was set */
@@ -1165,9 +1178,9 @@ xipfs_file_write_8(xipfs_file_t *filp, off_t pos, char byte)
         /* xipfs_errno was set */
         return -1;
     }
-    /* since off_t is defined as a signed integer type, we must
-     * verify that the value is non-negative */
-    if (pos < 0 || pos > pos_max) {
+    /* Since xipfs_file_position_t is defined as an int32_t, we must
+     * verify that the value is non-negative. */
+    if (pos < XIPFS_FILE_POSITION_MIN || pos > pos_max) {
         xipfs_errno = XIPFS_EMAXOFF;
         return -1;
     }

@@ -221,6 +221,13 @@ xipfs_buffer_read(void *dest, const void *src, size_t len)
     size_t pos, i;
     unsigned num;
 
+    assert(dest != NULL);
+    assert(src != NULL);
+    if ( (dest == NULL) || (src == NULL) ) {
+        xipfs_errno = XIPFS_ENULLPOINTER;
+        return -1;
+    }
+
     for (i = 0; i < len; i++) {
         ptr = (const char *)src + i;
         if (xipfs_flash_in(ptr) < 0) {
@@ -258,7 +265,7 @@ xipfs_buffer_read(void *dest, const void *src, size_t len)
  * value otherwise
  */
 int
-xipfs_buffer_read_8(char *dest, void *src)
+xipfs_buffer_read_8(char *dest, const void *src)
 {
     return xipfs_buffer_read(dest, src, sizeof(*dest));
 }
@@ -276,7 +283,7 @@ xipfs_buffer_read_8(char *dest, void *src)
  * value otherwise
  */
 int
-xipfs_buffer_read_32(unsigned *dest, void *src)
+xipfs_buffer_read_32(unsigned *dest, const void *src)
 {
     return xipfs_buffer_read(dest, src, sizeof(*dest));
 }
@@ -301,6 +308,13 @@ xipfs_buffer_write(void *dest, const void *src, size_t len)
     void *addr, *ptr;
     size_t pos, i;
     unsigned num;
+
+    assert(dest != NULL);
+    assert(src != NULL);
+    if ( (dest == NULL) || (src == NULL) ) {
+        xipfs_errno = XIPFS_ENULLPOINTER;
+        return -1;
+    }
 
     for (i = 0; i < len; i++) {
         ptr = (char *)dest + i;

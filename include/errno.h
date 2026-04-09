@@ -162,6 +162,16 @@ enum xipfs_errno_e {
     XIPFS_ENOMPUSUPPORT,
 
     /**
+     * NULL pointer.
+     */
+    XIPFS_ENULLPOINTER,
+
+    /**
+     * Invalid size.
+     */
+    XIPFS_EINVALIDSIZE,
+
+    /**
      * Error number - must be the last element
      */
     XIPFS_ENUM,

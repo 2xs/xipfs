@@ -97,6 +97,8 @@ xipfs_fs_head(xipfs_mount_t *mp)
 {
     xipfs_file_t *headp;
 
+    assert(mp != NULL);
+
     headp = mp->page_addr;
     if ((int)headp->next == (int)XIPFS_FLASH_ERASE_STATE) {
         /* no file in the file system */
@@ -173,6 +175,8 @@ xipfs_fs_tail(xipfs_mount_t *mp)
 {
     xipfs_file_t *filp, *tailp;
 
+    assert(mp != NULL);
+
     if ((filp = xipfs_fs_head(mp)) == NULL) {
         /* no file in the file system or error */
         return NULL;
@@ -210,6 +214,8 @@ xipfs_fs_tail_next(xipfs_mount_t *mp)
 {
     xipfs_file_t *tailp;
 
+    assert(mp != NULL);
+
     xipfs_errno = XIPFS_OK;
     if ((tailp = xipfs_fs_tail(mp)) == NULL) {
         if (xipfs_errno != XIPFS_OK) {
@@ -242,8 +248,11 @@ xipfs_fs_tail_next(xipfs_mount_t *mp)
  * address or a negative value otherwise
  */
 int
-xipfs_fs_get_page_number(xipfs_mount_t *mp)
+xipfs_fs_get_page_number(const xipfs_mount_t *mp)
 {
+    assert(mp != NULL);
+    assert(mp->page_num <= (size_t)INT_MAX);
+    assert(mp->page_num <= XIPFS_FILE_POSITION_MAX_AS_SIZE_T);
     return mp->page_num;
 }
 
@@ -267,6 +276,8 @@ xipfs_fs_free_pages(xipfs_mount_t *mp)
     xipfs_file_t *headp, *tailp;
     int used, free;
 
+    assert(mp != NULL);
+
     xipfs_errno = XIPFS_OK;
     if ((headp = xipfs_fs_head(mp)) == NULL) {
         if (xipfs_errno != XIPFS_OK) {
@@ -274,16 +285,37 @@ xipfs_fs_free_pages(xipfs_mount_t *mp)
             return -1;
         }
         /* all pages are free */
+        assert(mp->page_num <= XIPFS_FILE_POSITION_MAX_AS_SIZE_T);
+        assert(mp->page_num <= (size_t)INT_MAX);
+        assert(mp->page_num <= (size_t)XIPFS_NVM_NUMOF);
         return mp->page_num;
     }
     if ((tailp = xipfs_fs_tail(mp)) == NULL) {
         /* xipfs_errno was set */
         return -1;
     }
-    used  = (unsigned)tailp;
-    used += (unsigned)tailp->reserved;
-    used -= (unsigned)headp;
+
+    assert(tailp >= headp);
+
+    assert((void *)tailp <= (void *)INT_MAX);
+    assert((INT_MAX - (int)tailp) > 0);
+    used  = (int)tailp;
+
+    assert(tailp->reserved > (int)0);
+    assert(tailp->reserved <= INT_MAX);
+    assert((INT_MAX - (int)used) >= tailp->reserved);
+    used += (int)tailp->reserved;
+
+    assert((void *)headp <= (void *)INT_MAX);
+    assert((int)headp <= used);
+    used -= (int)headp;
+
     used /= XIPFS_NVM_PAGE_SIZE;
+    assert((size_t)used <= (size_t)XIPFS_NVM_NUMOF);
+
+    assert(mp->page_num <= XIPFS_FILE_POSITION_MAX_AS_SIZE_T);
+    assert(mp->page_num <= (size_t)INT_MAX);
+    assert(used <= (int)mp->page_num);
     free = mp->page_num - used;
 
     return free;
@@ -313,7 +345,7 @@ xipfs_fs_free_pages(xipfs_mount_t *mp)
  * structure or NULL otherwise
  */
 xipfs_file_t *
-xipfs_fs_new_file(xipfs_mount_t *mp, const char *path, size_t size,
+xipfs_fs_new_file(xipfs_mount_t *mp, const char *path, xipfs_file_position_t size,
                   int exec)
 {
     int free_pages, reserved_pages;
@@ -338,12 +370,19 @@ xipfs_fs_new_file(xipfs_mount_t *mp, const char *path, size_t size,
         return NULL;
     }
 
+    if (size < 0) {
+        xipfs_errno = XIPFS_EINVALIDSIZE;
+        return NULL;
+    }
+
     if (size > 0) {
         reserved = ROUND(size + sizeof(xipfs_file_t), XIPFS_NVM_PAGE_SIZE);
     } else {
         reserved = XIPFS_NVM_PAGE_SIZE;
     }
-    reserved_pages = reserved / XIPFS_NVM_PAGE_SIZE;
+    assert(reserved > 0);
+    assert(reserved <= (size_t)INT_MAX);
+    reserved_pages = (int)reserved / XIPFS_NVM_PAGE_SIZE;
 
     if (reserved_pages < free_pages) {
         next = (char *)filp + reserved;
@@ -356,6 +395,8 @@ xipfs_fs_new_file(xipfs_mount_t *mp, const char *path, size_t size,
 
     (void)memset(&file, XIPFS_NVM_ERASE_STATE, sizeof(file));
     (void)strncpy(file.path, path, XIPFS_PATH_MAX - 1);
+    /* Should be already covered up above, but let's keep it for safety */
+    assert(reserved < XIPFS_FILE_POSITION_MAX_AS_SIZE_T);
     file.reserved = reserved;
     file.next = next;
     file.exec = exec;
@@ -385,16 +426,17 @@ xipfs_fs_new_file(xipfs_mount_t *mp, const char *path, size_t size,
  * value otherwise
  */
 int
-xipfs_fs_remove(void *dst)
+xipfs_fs_remove(xipfs_file_t *destination)
 {
     xipfs_file_t file;
     size_t pagenum, i;
-    void *src, *next;
+    void *src, *next, *dst;
     unsigned int num;
-    uint32_t size;
+    size_t size;
 
-    assert(dst != NULL);
+    assert(destination != NULL);
 
+    dst = destination;
     xipfs_errno = XIPFS_OK;
     /* get the next file if any */
     if ((next = xipfs_fs_next(dst)) == NULL) {
@@ -422,8 +464,12 @@ xipfs_fs_remove(void *dst)
         }
         /* copy and fix up the file structure */
         (void)memcpy(&file, src, sizeof(file));
+        assert((uintptr_t)src <= (uintptr_t)((xipfs_file_t *)src)->next);
         size = (uintptr_t)((xipfs_file_t *)src)->next - (uintptr_t)src;
+        assert(size <= XIPFS_FILE_POSITION_MAX_AS_SIZE_T);
         file.next = (xipfs_file_t *)((uintptr_t)dst + size);
+        // This assert is aimed at detecting when (dst + size) overflows uintptr_t capacity.
+        assert((uintptr_t)file.next >= (uintptr_t)dst);
         if (xipfs_flash_write_unaligned(dst, &file, sizeof(file)) < 0) {
             /* xipfs_errno was set */
             return -1;
@@ -488,9 +534,12 @@ xipfs_fs_format(xipfs_mount_t *mp)
 
     start_addr = mp->page_addr;
     end_addr = (char *)start_addr + mp->page_num * XIPFS_NVM_PAGE_SIZE;
+    // Assert there was no overflow and mp->page_num > 0.
+    assert(start_addr < end_addr);
 
     start_page = xipfs_nvm_page(start_addr);
     end_page = xipfs_nvm_page(end_addr);
+    assert(start_page < end_page);
 
     i = 0;
     while ((start_page + i) < end_page) {

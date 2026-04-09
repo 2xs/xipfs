@@ -405,7 +405,7 @@ xipfs_desc_untrack_all(xipfs_mount_t *mp)
  */
 int
 xipfs_desc_update(xipfs_mount_t *mp, xipfs_file_t *removed,
-                  size_t reserved)
+                  xipfs_file_position_t reserved)
 {
     xipfs_file_desc_t *file_descp;
     xipfs_dir_desc_t *dir_descp;
@@ -416,6 +416,9 @@ xipfs_desc_update(xipfs_mount_t *mp, xipfs_file_t *removed,
         return -EFAULT;
     }
     if (removed == NULL) {
+        return -EFAULT;
+    }
+    if (reserved < 0) {
         return -EFAULT;
     }
 

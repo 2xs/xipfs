@@ -48,7 +48,7 @@ int xipfs_dir_desc_untrack(xipfs_dir_desc_t *descp);
 int xipfs_file_desc_tracked(xipfs_file_desc_t *descp);
 int xipfs_dir_desc_tracked(xipfs_dir_desc_t *descp);
 int xipfs_desc_untrack_all(xipfs_mount_t *mp);
-int xipfs_desc_update(xipfs_mount_t *mp, xipfs_file_t *removed, size_t reserved);
+int xipfs_desc_update(xipfs_mount_t *mp, xipfs_file_t *removed, xipfs_file_position_t reserved);
 
 #ifdef __cplusplus
 }

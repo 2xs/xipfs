@@ -41,12 +41,11 @@ extern "C" {
 
 int xipfs_fs_format(xipfs_mount_t *vfs_mp);
 int xipfs_fs_free_pages(xipfs_mount_t *vfs_mp);
-int xipfs_fs_get_page_number(xipfs_mount_t *vfs_mp);
+int xipfs_fs_get_page_number(const xipfs_mount_t *vfs_mp);
 xipfs_file_t *xipfs_fs_head(xipfs_mount_t *vfs_mp);
-int xipfs_fs_mountp_check(xipfs_mount_t *mountp);
-xipfs_file_t *xipfs_fs_new_file(xipfs_mount_t *vfs_mp, const char *path, size_t size, int exec);
+xipfs_file_t *xipfs_fs_new_file(xipfs_mount_t *vfs_mp, const char *path, xipfs_file_position_t size, int exec);
 xipfs_file_t *xipfs_fs_next(xipfs_file_t *filp);
-int xipfs_fs_remove(void *dst);
+int xipfs_fs_remove(xipfs_file_t *dst);
 int xipfs_fs_rename_all(xipfs_mount_t *vfs_mp, const char *from, const char *to);
 xipfs_file_t *xipfs_fs_tail(xipfs_mount_t *vfs_mp);
 xipfs_file_t *xipfs_fs_tail_next(xipfs_mount_t *vfs_mp);

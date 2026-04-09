@@ -498,6 +498,9 @@ xipfs_path_new_n(xipfs_mount_t *xipfs_mp, xipfs_path_t *xipaths,
     xipfs_file_t *filp;
     size_t i, j;
 
+    assert(xipaths != NULL);
+    assert(paths != NULL);
+
     for (j = 0; j < n; j++) {
         if (paths[j][0] == '\0') {
             return -1;
@@ -586,7 +589,7 @@ xipfs_path_new_n(xipfs_mount_t *xipfs_mp, xipfs_path_t *xipaths,
     /*
      * If the type of the path is still undefined upon reaching
      * this point. It means that one or more of its components,
-     * other than the last one, do not exist.
+     * other than the last one, does not exist.
      */
     for (j = 0; j < n; j++) {
         if (xipaths[j].info == XIPFS_PATH_UNDEFINED) {

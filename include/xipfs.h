@@ -213,9 +213,9 @@ extern "C" {
  * That means that a memory word is equal to 0xFFFFFFFF after erasure.
  * This property is used in the sizes array of xipfs_file_t to distinguish free slots from
  * occupied ones; the last occupied slot being the current file size.
- * Since xipfs_file_position_t is aimed at storing both file size and position, uint32_t has been
- * chosen over int32_t, to prevent from any negative value.
  * Please note that only 31 bits are meaningful then, which luckily corresponds to INT32_MAX.
+ * - Because file size, max position and reserved getters return a negative value on errors,
+ * the underlying type of xipfs_file_position_t must be an int32_t.
  * - Even without the flash memory constraints, C/POSIX file API relies on size_t, ssize_t and off_t
  * for file primitive functions, e.g read/write/lseek/stat etc..
  * Regarding to 32 bits platforms, this implies to use signed and unsigned 32 bits types.
@@ -223,22 +223,23 @@ extern "C" {
  * is implementation defined; in this context, SSIZE_MAX would be INT32_MAX.
  * For XIPFS, the choice has been made to support only up till INT32_MAX bytes for writes and reads.
  */
-typedef uint32_t xipfs_file_position_t;
+typedef int32_t xipfs_file_position_t;
 
-#define XIPFS_FILE_POSITION_MAX (UINT32_MAX>>1)
+#define XIPFS_FILE_POSITION_MIN (0)
+#define XIPFS_FILE_POSITION_MAX (INT32_MAX)
 
-#define XIPFS_FILE_POSITION_FORMAT PRiu32
+#define XIPFS_FILE_POSITION_FORMAT PRid32
 
 #define XIPFS_FILE_POSITION_MAX_AS_SIZE_T \
     ((size_t)XIPFS_FILE_POSITION_MAX)
 
 #define XIPFS_FILE_POSITION_MIN_AS_SSIZE_T \
-    ((ssize_t)0)
+    ((ssize_t)XIPFS_FILE_POSITION_MIN)
 #define XIPFS_FILE_POSITION_MAX_AS_SSIZE_T \
     ((ssize_t)XIPFS_FILE_POSITION_MAX)
 
 #define XIPFS_FILE_POSITION_MIN_AS_OFF_T \
-    ((off_t)0)
+    ((off_t)XIPFS_FILE_POSITION_MIN)
 #define XIPFS_FILE_POSITION_MAX_AS_OFF_T \
     ((off_t)XIPFS_FILE_POSITION_MAX)
 
@@ -257,14 +258,14 @@ typedef struct xipfs_file_s {
     /**
      * The actual size reserved for the file
      */
-    size_t reserved;
+    xipfs_file_position_t reserved;
     /**
      * The table lists the file sizes, with the last entry
      * reflecting the current size of the file. This method
      * helps to avoid flashing the flash page every time there
      * is a change in size
      */
-    size_t size[XIPFS_FILESIZE_SLOT_MAX];
+    xipfs_file_position_t size[XIPFS_FILESIZE_SLOT_MAX];
     /**
      * Execution right
      */
@@ -291,7 +292,7 @@ typedef struct xipfs_dir_desc_s {
 
 typedef struct xipfs_file_desc_s {
     xipfs_file_t *filp;
-    off_t pos;
+    xipfs_file_position_t pos;
     int flags;
 } xipfs_file_desc_t;
 
@@ -425,7 +426,7 @@ int xipfs_fsync(xipfs_mount_t *mp, xipfs_file_desc_t *descp, off_t pos);
 off_t xipfs_lseek(xipfs_mount_t *mp, xipfs_file_desc_t *descp, off_t off, int whence);
 int xipfs_mkdir(xipfs_mount_t *mp, const char *name, mode_t mode);
 int xipfs_mount(xipfs_mount_t *mp);
-int xipfs_new_file(xipfs_mount_t *mp, const char *path, uint32_t size, uint32_t exec);
+int xipfs_new_file(xipfs_mount_t *mp, const char *path, xipfs_file_position_t size, uint32_t exec);
 int xipfs_open(xipfs_mount_t *mp, xipfs_file_desc_t *descp, const char *name, int flags, mode_t mode);
 int xipfs_opendir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp, const char *dirname);
 ssize_t xipfs_read(xipfs_mount_t *mp, xipfs_file_desc_t *descp, void *dest, size_t nbytes);

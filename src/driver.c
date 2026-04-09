@@ -195,7 +195,7 @@ basename(char *base, const char *path)
 static int
 sync_remove_file(xipfs_mount_t *mp, xipfs_file_t *filp)
 {
-    size_t reserved;
+    xipfs_file_position_t reserved;
 
     assert(mp != NULL);
     assert(filp != NULL);
@@ -225,7 +225,7 @@ sync_remove_file(xipfs_mount_t *mp, xipfs_file_t *filp)
  * passed as an argument is valid or a negative value otherwise
  */
 static int
-xipfs_mp_check(xipfs_mount_t *mp)
+xipfs_mp_check(const xipfs_mount_t *mp)
 {
     unsigned int page;
 
@@ -233,6 +233,11 @@ xipfs_mp_check(xipfs_mount_t *mp)
         return -EFAULT;
     }
     if (mp->magic != XIPFS_MAGIC) {
+        return -EINVAL;
+    }
+    if ( (mp->mount_path == NULL) ||
+         (mp->mount_path[0] == '\0') ||
+         ((mp->mount_path[0] == '/') && mp->mount_path[1] == '\0') ) {
         return -EINVAL;
     }
     if (!xipfs_flash_in(mp->page_addr)) {
@@ -259,11 +264,42 @@ xipfs_mp_check(xipfs_mount_t *mp)
     if (filesystem_max_pages_count < (size_t)XIPFS_NVM_NUMOF) {
         return -EINVAL;
     }
-    if (mp->page_num > XIPFS_NVM_NUMOF) {
+    if (mp->page_num > (size_t)XIPFS_NVM_NUMOF) {
         return -EINVAL;
     }
+    /* Given that :
+     * - mp->page_num is a size_t,
+     * - xipfs_nvm_page returns an unsigned int,
+     * - both xipfs_fs_free_pages and xipfs_fs_get_page_number return an int,
+     * - (size_t)INT_MAX < (size_t)UINT_MAX <= SIZE_MAX,
+     * just ensure that mountpoint's page_num is less than INT_MAX to be consistent.
+     */
+    if (mp->page_num > (size_t)INT_MAX) {
+        return -EINVAL;
+    }
+    /*
+     * Because :
+     * - mp->page_num is a size_t,
+     * - both xipfs_fs_free_pages and xipfs_fs_get_page_number return an int,
+     * - (size_t)INT_MAX < (size_t)UINT_MAX <= SIZE_MAX,
+     * let's check that xipfs_nvm_page does not return values greater than INT_MAX.
+     */
     page = xipfs_nvm_page(mp->page_addr);
+    if (page > (unsigned int)INT_MAX) {
+        return -EINVAL;
+    }
+    /* Check that the nvm range defined by the mountpoint is in the maximum
+     * pages count supported by the NVM.
+     */
     if (((unsigned int)XIPFS_NVM_NUMOF - page) < mp->page_num) {
+        return -EINVAL;
+    }
+
+    if (mp->mutex == NULL) {
+        return -EINVAL;
+    }
+
+    if (mp->execution_mutex == NULL) {
         return -EINVAL;
     }
 
@@ -276,9 +312,11 @@ xipfs_mp_check(xipfs_mount_t *mp)
  * @pre should be call after xipfs_mp_check
  */
 static int
-xipfs_file_desc_check(xipfs_mount_t *mp, xipfs_file_desc_t *descp)
+xipfs_file_desc_check(const xipfs_mount_t *mp, const xipfs_file_desc_t *descp)
 {
     uintptr_t start, end, filp;
+
+    assert(mp != NULL);
 
     start = (uintptr_t)mp->page_addr;
     end = start + mp->page_num * XIPFS_NVM_PAGE_SIZE;
@@ -293,6 +331,10 @@ xipfs_file_desc_check(xipfs_mount_t *mp, xipfs_file_desc_t *descp)
     if (!(filp >= start && filp < end)) {
         return -EINVAL;
     }
+    /*
+     * Since xipfs_file_position_t is a signed type, ensure that
+     * the position is equal to or greater than zero.
+     */
     if (descp->pos < 0) {
         return -EINVAL;
     }
@@ -316,7 +358,7 @@ xipfs_file_desc_check(xipfs_mount_t *mp, xipfs_file_desc_t *descp)
 int
 xipfs_close(xipfs_mount_t *mp, xipfs_file_desc_t *descp)
 {
-    off_t size;
+    xipfs_file_position_t size;
     int ret;
 
     if ((ret = xipfs_mp_check(mp)) < 0) {
@@ -372,10 +414,10 @@ xipfs_fstat(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     if ((ret = xipfs_file_desc_tracked(descp)) < 0) {
         return ret;
     }
-    if ((size = xipfs_file_get_size(descp->filp)) < 0) {
+    if ((size = (off_t)xipfs_file_get_size(descp->filp)) < 0) {
         return -EIO;
     }
-    if ((reserved = xipfs_file_get_reserved(descp->filp)) < 0) {
+    if ((reserved = (off_t)xipfs_file_get_reserved(descp->filp)) < 0) {
         return -EIO;
     }
 
@@ -384,7 +426,7 @@ xipfs_fstat(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     buf->st_ino = (ino_t)(uintptr_t)descp->filp;
     buf->st_mode = S_IFREG;
     buf->st_nlink = 1;
-    buf->st_size = MAX(size, descp->pos);
+    buf->st_size = MAX(size, (off_t)descp->pos);
     buf->st_blksize = XIPFS_NVM_PAGE_SIZE;
     buf->st_blocks = reserved / XIPFS_NVM_PAGE_SIZE;
 
@@ -398,8 +440,6 @@ xipfs_lseek(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     off_t max_pos, new_pos, size;
     int ret;
 
-    UNUSED(mp);
-
     if ((ret = xipfs_mp_check(mp)) < 0) {
         return ret;
     }
@@ -409,41 +449,65 @@ xipfs_lseek(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     if ((ret = xipfs_file_desc_tracked(descp)) < 0) {
         return -EBADF;
     }
+    /*
+     * No matter what architecture is used at compile time, both off_t and xipfs_file_position_t
+     * are signed types. Furthermore, sizeof(xipfs_file_position_t) <= sizeof(off_t).
+     * That means that values retrieved from xipfs_file_* can't overflow off_t.
+     * Then maxpos is necessary :
+     * - greater than or equal to 0,
+     * - less than or equal to XIPFS_FILE_POSITION_MAX.
+     */
     if ((uintptr_t)descp->filp != (uintptr_t)xipfs_infos_file) {
-        if ((max_pos = xipfs_file_get_max_pos(descp->filp)) < 0) {
+        if ((max_pos = (off_t)xipfs_file_get_max_pos(descp->filp)) < 0) {
             return -EIO;
         }
-        if ((size = xipfs_file_get_size(descp->filp)) < 0) {
+        if ((size = (off_t)xipfs_file_get_size(descp->filp)) < 0) {
             return -EIO;
         }
     } else {
-        max_pos = sizeof(xipfs_mount_t);
+        max_pos = (off_t)sizeof(xipfs_mount_t);
         size = (off_t)sizeof(xipfs_mount_t);
     }
+    assert(size <= max_pos);
+    assert(descp->pos <= max_pos);
 
     switch (whence) {
         case SEEK_SET:
+            if ( (off < 0) || (off >= max_pos) ) {
+                return -EINVAL;
+            }
             new_pos = off;
             break;
         case SEEK_CUR:
+            if ( off < 0 ) {
+                if (off < -((off_t)descp->pos)) {
+                    return -EINVAL;
+                }
+            } else {
+                const off_t remaining_bytes = max_pos - (off_t)descp->pos;
+                if ( remaining_bytes < off ) {
+                    return -EINVAL;
+                }
+            }
             new_pos = descp->pos + off;
             break;
         case SEEK_END:
-            new_pos = MAX(descp->pos, size) + off;
+            new_pos = MAX((off_t)descp->pos, size);
+            if ( (off > 0) || (off < -new_pos) ) {
+                return -EINVAL;
+            }
+            new_pos += off;
             break;
         default:
             return -EINVAL;
     }
-    if (new_pos < 0 || new_pos > max_pos) {
-        return -EINVAL;
-    }
-    if (descp->pos > size && new_pos < descp->pos) {
+    if (((off_t)descp->pos) > size && new_pos < ((off_t)descp->pos)) {
         /* synchronise file size */
         if (xipfs_file_set_size(descp->filp, descp->pos) < 0) {
             return -EIO;
         }
     }
-    descp->pos = new_pos;
+    descp->pos = (xipfs_file_position_t)new_pos;
 
     return new_pos;
 }
@@ -456,7 +520,7 @@ xipfs_open(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     xipfs_path_t xipath;
     xipfs_file_t *filp;
     size_t len;
-    off_t pos;
+    xipfs_file_position_t pos;
     int ret;
 
     /* mode bits are ignored */
@@ -585,7 +649,7 @@ ssize_t
 xipfs_read(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
            void *dest, size_t nbytes)
 {
-    off_t size;
+    xipfs_file_position_t size;
     size_t i;
     int ret;
 
@@ -596,7 +660,7 @@ xipfs_read(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
         if (nbytes != sizeof(xipfs_mount_t)) {
             return -EINVAL;
         }
-        if ((nbytes > 0) && (descp->pos >= (off_t)sizeof(xipfs_mount_t))) {
+        if ((nbytes > 0) && (descp->pos >= (xipfs_file_position_t)sizeof(xipfs_mount_t))) {
             return -EIO;
         }
         for (i = 0; i < nbytes && i < sizeof(xipfs_mount_t); i++) {
@@ -617,6 +681,9 @@ xipfs_read(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     }
     if (dest == NULL) {
         return -EFAULT;
+    }
+    if (nbytes > XIPFS_FILE_POSITION_MAX_AS_SIZE_T) {
+        return -EINVAL;
     }
     switch(descp->flags & O_ACCMODE) {
         case O_RDONLY :
@@ -647,7 +714,7 @@ ssize_t
 xipfs_write(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
             const void *src, size_t nbytes)
 {
-    off_t max_pos;
+    xipfs_file_position_t max_pos;
     size_t i;
     int ret;
 
@@ -662,6 +729,9 @@ xipfs_write(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     }
     if (src == NULL) {
         return -EFAULT;
+    }
+    if (nbytes > XIPFS_FILE_POSITION_MAX_AS_SIZE_T) {
+        return -EINVAL;
     }
     if (((descp->flags & O_WRONLY) != O_WRONLY) &&
         ((descp->flags & O_RDWR) != O_RDWR)) {
@@ -679,7 +749,7 @@ xipfs_write(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     }
     for (i = 0; i < nbytes && descp->pos < max_pos; i++) {
         if (xipfs_file_write_8(descp->filp, descp->pos,
-                ((char *)src)[i]) < 0) {
+                ((const char *)src)[i]) < 0) {
             return -EIO;
         }
         descp->pos++;
@@ -707,7 +777,10 @@ xipfs_fsync(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
         ((descp->flags & O_RDWR) != O_RDWR)) {
         return -EACCES;
     }
-    if (xipfs_file_set_size(descp->filp, pos) < 0) {
+    if ( (pos < 0) || (pos > XIPFS_FILE_POSITION_MAX_AS_OFF_T) ) {
+        return -EINVAL;
+    }
+    if (xipfs_file_set_size(descp->filp, (xipfs_file_position_t)pos) < 0) {
         return -EIO;
     }
 
@@ -1416,7 +1489,7 @@ xipfs_stat(xipfs_mount_t *mp, const char *path,
         return -ENOENT;
     }
 
-    if ((size = xipfs_file_get_size_(xipath.witness)) < 0) {
+    if ((size = (off_t)xipfs_file_get_size_(xipath.witness)) < 0) {
         return -EIO;
     }
 
@@ -1480,7 +1553,7 @@ xipfs_statvfs(xipfs_mount_t *mp, const char *restrict path,
 
 int
 xipfs_new_file(xipfs_mount_t *mp, const char *path,
-               uint32_t size, uint32_t exec)
+               xipfs_file_position_t size, uint32_t exec)
 {
     xipfs_path_t xipath;
     size_t len;
@@ -1541,6 +1614,9 @@ xipfs_new_file(xipfs_mount_t *mp, const char *path,
         if (xipfs_errno == XIPFS_ENOSPACE ||
             xipfs_errno == XIPFS_EFULL) {
             return -EDQUOT;
+        }
+        if (xipfs_errno == XIPFS_EINVALIDSIZE) {
+            return -EINVAL;
         }
         return -EIO;
     }
