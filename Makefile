@@ -46,8 +46,13 @@ AR              = $(PREFIX)ar
 CFLAGS          = -Wall
 CFLAGS         += -Wextra
 CFLAGS         += -Werror
+ifeq ($(BOARD), workstation)
+CFLAGS         += -std=c11
+CFLAGS         += -Wno-unused-function
+else
 CFLAGS         += -ffreestanding
 CFLAGS         += -mthumb
+endif
 CFLAGS         += $(BOARD_CFLAGS)
 ifndef DEBUG
 CFLAGS         += -Os

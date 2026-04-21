@@ -37,6 +37,7 @@
  */
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 
 /*
  * xipfs includes
@@ -45,6 +46,10 @@
 #include "include/buffer.h"
 #include "include/errno.h"
 #include "include/flash.h"
+
+#ifdef XIPFS_WORKSTATION
+#include <stdlib.h>
+#endif
 
 /**
  * @internal
@@ -79,7 +84,25 @@ typedef struct xipfs_buf_s {
     /**
      * The I/O buffer
      */
-    char buf[XIPFS_NVM_PAGE_SIZE] __attribute__ ((aligned(FLASHPAGE_WRITE_BLOCK_ALIGNMENT)));
+#ifdef XIPFS_WORKSTATION
+    /* There's no memory alignment required when building xipfs for a workstation,
+     * and compilation would fail for a workstation because in that case
+     * XIPFS_NVM_WRITE_BLOCK_ALIGNMENT is defined as an extern variable.
+     * Moreover, we cannot decide at compilation time the buffer size, since
+     * it is a runtime parameter according to the chosen target given by the command line.
+     * We could set an arbitrary maximum buffer size and check it at runtime against the target
+     * flashpage size but that would be a bit brittle.
+     * Then, we chose to go full dynamic allocation and add xipfs_buf_allocate/xipfs_buf_free
+     * into into the buffer API, only available when building for a workstation.
+     */
+    char *buf;
+
+#else /* XIPFS_WORKSTATION */
+    /* On real-life boards, we need to align the buffer according to the write block alignment
+     * to perform fast buffer writes.
+     */
+    char buf[XIPFS_NVM_PAGE_SIZE] __attribute__ ((aligned(XIPFS_NVM_WRITE_BLOCK_ALIGNMENT)));
+#endif /* XIPFS_WORKSTATION */
     /**
      * The flash page number loaded into the I/O buffer
      */
@@ -96,6 +119,9 @@ typedef struct xipfs_buf_s {
  * @brief The buffer used by xipfs
  */
 static xipfs_buf_t xipfs_buf = {
+#ifdef XIPFS_WORKSTATION
+    .buf = NULL,
+#endif
     .state = XIPFS_BUFFER_KO,
 };
 
@@ -163,13 +189,30 @@ xipfs_buffer_flush(void)
         }
     }
 
-    if(flashpage_write_and_verify(xipfs_buf.page_num, xipfs_buf.buf) != FLASHPAGE_OK) {
+    xipfs_nvm_write(xipfs_nvm_addr(xipfs_buf.page_num), xipfs_buf.buf, XIPFS_NVM_PAGE_SIZE);
+    if (memcmp(xipfs_nvm_addr(xipfs_buf.page_num), xipfs_buf.buf, XIPFS_NVM_PAGE_SIZE) != 0) {
         return -1;
     }
 
     xipfs_buf.state = XIPFS_BUFFER_OK;
 
     return 0;
+}
+
+void
+xipfs_buffer_invalidate(void)
+{
+#ifdef XIPFS_WORKSTATION
+    (void)memset(xipfs_buf.buf, 0, XIPFS_NVM_PAGE_SIZE);
+#else
+    /**
+     * ATTENTION : mind the '&' just before xipfs_buf.buf.
+     */
+    (void)memset(&xipfs_buf.buf, 0, XIPFS_NVM_PAGE_SIZE);
+#endif
+    xipfs_buf.state = XIPFS_BUFFER_KO;
+    xipfs_buf.page_num = 0;
+    xipfs_buf.page_addr = NULL;
 }
 
 /**
@@ -376,3 +419,25 @@ xipfs_buffer_write_32(void *dest, unsigned src)
 {
     return xipfs_buffer_write(dest, &src, sizeof(src));
 }
+
+#ifdef XIPFS_WORKSTATION
+int xipfs_buffer_allocate(void)
+{
+    assert(XIPFS_NVM_PAGE_SIZE > 0);
+    if (xipfs_buf.buf != NULL)
+        return -1;
+
+    xipfs_buf.buf = malloc(XIPFS_NVM_PAGE_SIZE);
+    if (xipfs_buf.buf == NULL)
+        return -1;
+    return 0;
+}
+
+void xipfs_buffer_free(void)
+{
+    if (xipfs_buf.buf != NULL) {
+        free(xipfs_buf.buf);
+        xipfs_buf.buf = NULL;
+    }
+}
+#endif

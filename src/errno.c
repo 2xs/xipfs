@@ -85,7 +85,8 @@ static const char *xipfs_errno_to_str[XIPFS_ENUM] = {
     [XIPFS_ENOSAFESUPPORT] = "no safe execution support",
     [XIPFS_ENOMPUSUPPORT] = "no implementation for this MPU type",
     [XIPFS_ENULLPOINTER] = "NULL pointer",
-    [XIPFS_EINVALIDSIZE] = "Invalid size"
+    [XIPFS_EINVALIDSIZE] = "Invalid size",
+    [XIPFS_EINVALIDPAGEADDR] = "Invalid page address"
 };
 
 /**

@@ -172,6 +172,11 @@ enum xipfs_errno_e {
     XIPFS_EINVALIDSIZE,
 
     /**
+     * Invalid page address.
+     */
+    XIPFS_EINVALIDPAGEADDR,
+
+    /**
      * Error number - must be the last element
      */
     XIPFS_ENUM,

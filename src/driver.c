@@ -174,7 +174,7 @@ basename(char *base, const char *path)
  * region containing an xipfs mount point structure which is
  * accessible and valid
  *
- * @pre xipfs_filp must be a pointer that references an
+ * @pre filp must be a pointer that references an
  * accessible memory region
  *
  * @brief Remove a file by flushing the read/write buffer,
@@ -182,10 +182,10 @@ basename(char *base, const char *path)
  * xipfs file addresses of all open VFS file descriptor
  * structures
  *
- * @param xipfs_mp A pointer to a memory region containing an
+ * @param mp A pointer to a memory region containing an
  * xipfs mount point structure
  *
- * @param xipfs_filp A pointer to a memory region containing
+ * @param filp A pointer to a memory region containing
  * the accessible xipfs file structure of the xipfs file to
  * remove
  *
@@ -204,9 +204,10 @@ sync_remove_file(xipfs_mount_t *mp, xipfs_file_t *filp)
         return -1;
     }
     reserved = filp->reserved;
-    if (xipfs_fs_remove(filp) < 0) {
+    if (xipfs_fs_remove(mp, filp) < 0) {
         return -1;
     }
+    xipfs_buffer_invalidate();
     xipfs_desc_update(mp, filp, reserved);
 
     return 0;
@@ -218,7 +219,7 @@ sync_remove_file(xipfs_mount_t *mp, xipfs_file_t *filp)
  * @brief Checks if the xipfs mount point structure passed as
  * an argument is valid
  *
- * @param xipfs_mp A pointer to a memory region containing an
+ * @param mp A pointer to a memory region containing an
  * xipfs mount point structure
  *
  * @return Returns zero if the xipfs mount point structure
@@ -235,28 +236,18 @@ xipfs_mp_check(const xipfs_mount_t *mp)
     if (mp->magic != XIPFS_MAGIC) {
         return -EINVAL;
     }
-    if ( (mp->mount_path == NULL) ||
-         (mp->mount_path[0] == '\0') ||
-         ((mp->mount_path[0] == '/') && mp->mount_path[1] == '\0') ) {
+    if ( (mp->mount_path == NULL) || (mp->mount_path[0] == '\0') ) {
         return -EINVAL;
     }
     if (!xipfs_flash_in(mp->page_addr)) {
         return -EINVAL;
     }
+    if (mp->page_end_addr <= mp->page_addr) {
+        return -EINVAL;
+    }
     if (mp->page_num == 0) {
         return -EINVAL;
     }
-#if (XIPFS_NVM_NUMOF <= 0)
-#error "XIPFS_NVM_NUMOF <= 0"
-#endif
-
-#if (XIPFS_NVM_PAGE_SIZE <= 0)
-#error "XIPFS_NVM_PAGE_SIZE <= 0"
-#endif
-
-#if (! (XIPFS_FILE_POSITION_MAX > (0U)) )
-#error "XIPFS_FILE_POSITION_MAX <= 0"
-#endif
     const size_t filesystem_max_pages_count = (size_t)XIPFS_FILE_POSITION_MAX / (size_t)XIPFS_NVM_PAGE_SIZE;
     if (filesystem_max_pages_count == 0) {
         return -EINVAL;
@@ -275,6 +266,11 @@ xipfs_mp_check(const xipfs_mount_t *mp)
      * just ensure that mountpoint's page_num is less than INT_MAX to be consistent.
      */
     if (mp->page_num > (size_t)INT_MAX) {
+        return -EINVAL;
+    }
+    const size_t actual_pages_count =
+        ((size_t)(mp->page_end_addr - mp->page_addr)) / XIPFS_NVM_PAGE_SIZE;
+    if (mp->page_num != actual_pages_count) {
         return -EINVAL;
     }
     /*
@@ -319,7 +315,7 @@ xipfs_file_desc_check(const xipfs_mount_t *mp, const xipfs_file_desc_t *descp)
     assert(mp != NULL);
 
     start = (uintptr_t)mp->page_addr;
-    end = start + mp->page_num * XIPFS_NVM_PAGE_SIZE;
+    end = (uintptr_t)mp->page_end_addr;
 
     if (descp == NULL) {
         return -EFAULT;
@@ -374,12 +370,12 @@ xipfs_close(xipfs_mount_t *mp, xipfs_file_desc_t *descp)
     if ((ret = xipfs_file_desc_tracked(descp)) < 0) {
         return ret;
     }
-    if ((size = xipfs_file_get_size(descp->filp)) < 0) {
+    if ((size = xipfs_file_get_size(mp, descp->filp)) < 0) {
         return -EIO;
     }
     if (size < descp->pos) {
         /* synchronise file size */
-        if (xipfs_file_set_size(descp->filp, descp->pos) < 0) {
+        if (xipfs_file_set_size(mp, descp->filp, descp->pos) < 0) {
             return -EIO;
         }
     }
@@ -414,10 +410,10 @@ xipfs_fstat(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     if ((ret = xipfs_file_desc_tracked(descp)) < 0) {
         return ret;
     }
-    if ((size = (off_t)xipfs_file_get_size(descp->filp)) < 0) {
+    if ((size = (off_t)xipfs_file_get_size(mp, descp->filp)) < 0) {
         return -EIO;
     }
-    if ((reserved = (off_t)xipfs_file_get_reserved(descp->filp)) < 0) {
+    if ((reserved = (off_t)xipfs_file_get_reserved(mp, descp->filp)) < 0) {
         return -EIO;
     }
 
@@ -458,10 +454,10 @@ xipfs_lseek(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
      * - less than or equal to XIPFS_FILE_POSITION_MAX.
      */
     if ((uintptr_t)descp->filp != (uintptr_t)xipfs_infos_file) {
-        if ((max_pos = (off_t)xipfs_file_get_max_pos(descp->filp)) < 0) {
+        if ((max_pos = (off_t)xipfs_file_get_max_pos(mp, descp->filp)) < 0) {
             return -EIO;
         }
-        if ((size = (off_t)xipfs_file_get_size(descp->filp)) < 0) {
+        if ((size = (off_t)xipfs_file_get_size(mp, descp->filp)) < 0) {
             return -EIO;
         }
     } else {
@@ -503,7 +499,7 @@ xipfs_lseek(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     }
     if (((off_t)descp->pos) > size && new_pos < ((off_t)descp->pos)) {
         /* synchronise file size */
-        if (xipfs_file_set_size(descp->filp, descp->pos) < 0) {
+        if (xipfs_file_set_size(mp, descp->filp, descp->pos) < 0) {
             return -EIO;
         }
     }
@@ -628,7 +624,7 @@ xipfs_open(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
         return -EIO;
     }
     if ((flags & O_APPEND) == O_APPEND) {
-        if ((pos = xipfs_file_get_size(filp)) < 0) {
+        if ((pos = xipfs_file_get_size(mp, filp)) < 0) {
             return -EIO;
         }
     } else {
@@ -693,14 +689,11 @@ xipfs_read(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
         default :
             return -EACCES;
     }
-    if ((size = xipfs_file_get_size(descp->filp)) < 0) {
-        return -EIO;
-    }
-    if ((nbytes > 0) && (descp->pos >= size)) {
+    if ((size = xipfs_file_get_size(mp, descp->filp)) < 0) {
         return -EIO;
     }
     for (i = 0; i < nbytes && descp->pos < size; i++) {
-        if (xipfs_file_read_8(descp->filp, descp->pos,
+        if (xipfs_file_read_8(mp, descp->filp, descp->pos,
                 &((char *)dest)[i]) < 0) {
             return -EIO;
         }
@@ -741,14 +734,11 @@ xipfs_write(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
         /* cannot write(2) */
         return -EBADF;
     }
-    if ((max_pos = xipfs_file_get_max_pos(descp->filp)) < 0) {
+    if ((max_pos = xipfs_file_get_max_pos(mp, descp->filp)) < 0) {
         return -EIO;
     }
-    if ((nbytes > 0) && (descp->pos >= max_pos)) {
-        return -EDQUOT;
-    }
     for (i = 0; i < nbytes && descp->pos < max_pos; i++) {
-        if (xipfs_file_write_8(descp->filp, descp->pos,
+        if (xipfs_file_write_8(mp, descp->filp, descp->pos,
                 ((const char *)src)[i]) < 0) {
             return -EIO;
         }
@@ -780,7 +770,7 @@ xipfs_fsync(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     if ( (pos < 0) || (pos > XIPFS_FILE_POSITION_MAX_AS_OFF_T) ) {
         return -EINVAL;
     }
-    if (xipfs_file_set_size(descp->filp, (xipfs_file_position_t)pos) < 0) {
+    if (xipfs_file_set_size(mp, descp->filp, (xipfs_file_position_t)pos) < 0) {
         return -EIO;
     }
 
@@ -937,7 +927,7 @@ xipfs_readdir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp,
                 return -ENAMETOOLONG;
             }
             /* set the next file to the structure */
-            if ((descp->filp = xipfs_fs_next(descp->filp)) == NULL) {
+            if ((descp->filp = xipfs_fs_next(mp, descp->filp)) == NULL) {
                 if (xipfs_errno != XIPFS_OK) {
                     return -EIO;
                 }
@@ -945,7 +935,7 @@ xipfs_readdir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp,
             /* entry was updated */
             return 1;
         }
-        descp->filp = xipfs_fs_next(descp->filp);
+        descp->filp = xipfs_fs_next(mp, descp->filp);
     }
     if (xipfs_errno != XIPFS_OK) {
         return -EIO;
@@ -977,6 +967,41 @@ xipfs_closedir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp)
     return 0;
 }
 
+/**
+ * @internal
+ *
+ * We only recompute mp->page_num when it has been set to XIPFS_PAGE_NUM_INVALID.
+ *
+ * When mp->page_num differs from XIPFS_PAGE_NUM_INVALID, we consider that all
+ * page properties have been set purposely.
+ *
+ * These properties will be checked in xipfs_mp_check.
+ *
+ * @see XIPFS_PAGE_NUM_INVALID in xipfs_file.h
+ */
+static inline int
+xipfs_check_mount_point_page_properties(xipfs_mount_t *mp)
+{
+    /* Is the mounpoint page num set to XIPFS_PAGE_NUM_INVALID ? */
+    if (mp->page_num == XIPFS_PAGE_NUM_INVALID) {
+
+        assert(mp->page_addr < mp->page_end_addr);
+        if (mp->page_addr >= mp->page_end_addr) {
+            xipfs_errno = XIPFS_EINVALIDPAGEADDR;
+            return -EINVAL;
+        }
+
+        mp->page_num = (mp->page_end_addr - mp->page_addr) / XIPFS_NVM_PAGE_SIZE;
+        assert(mp->page_num > 0);
+        if (mp->page_num == 0) {
+            xipfs_errno = XIPFS_EINVALIDPAGEADDR;
+            return -EINVAL;
+        }
+    }
+
+    return 0;
+}
+
 /*
  * Operations on mounted file systems
  */
@@ -985,6 +1010,10 @@ int
 xipfs_format(xipfs_mount_t *mp)
 {
     int ret;
+
+    if ((ret = xipfs_check_mount_point_page_properties(mp)) < 0) {
+        return ret;
+    }
 
     if ((ret = xipfs_mp_check(mp)) < 0) {
         return ret;
@@ -1005,6 +1034,10 @@ xipfs_mount(xipfs_mount_t *mp)
     int *start, *end;
     int ret;
 
+    if ((ret = xipfs_check_mount_point_page_properties(mp)) < 0) {
+        return ret;
+    }
+
     if ((ret = xipfs_mp_check(mp)) < 0) {
         return ret;
     }
@@ -1015,14 +1048,19 @@ xipfs_mount(xipfs_mount_t *mp)
             return -EIO;
         }
     }
-    /* ensure pages after the last file are erased */
+    end = (int *)((uintptr_t)mp->page_addr + mp->page_num *
+        XIPFS_NVM_PAGE_SIZE);
+    /* Ensure pages after the last file are erased.
+     * A full filesystem is valid : there is no free tail region to scan.
+     */
     if ((start = (int *)xipfs_fs_tail_next(mp)) == NULL) {
-        if (xipfs_errno != XIPFS_OK) {
+        if (xipfs_errno == XIPFS_EFULL) {
+            start = end;
+        }
+        else if (xipfs_errno != XIPFS_OK) {
             return -EIO;
         }
     }
-    end = (int *)((uintptr_t)mp->page_addr + mp->page_num *
-        XIPFS_NVM_PAGE_SIZE);
     while (start < end) {
         if (*start++ != (int)XIPFS_FLASH_ERASE_STATE) {
             return -EIO;
@@ -1276,7 +1314,7 @@ xipfs_rename(xipfs_mount_t *mp, const char *from_path,
             if (xipaths[0].witness == xipaths[1].witness) {
                 return 0;
             }
-            if (xipfs_file_rename(xipaths[0].witness,
+            if (xipfs_file_rename(mp, xipaths[0].witness,
                     xipaths[1].path) < 0) {
                 return -EIO;
             }
@@ -1295,7 +1333,7 @@ xipfs_rename(xipfs_mount_t *mp, const char *from_path,
             if (xipaths[1].path[xipaths[1].len-1] == '/') {
                 return -ENOTDIR;
             }
-            if (xipfs_file_rename(xipaths[0].witness,
+            if (xipfs_file_rename(mp, xipaths[0].witness,
                     xipaths[1].path) < 0) {
                 return -EIO;
             }
@@ -1317,7 +1355,7 @@ xipfs_rename(xipfs_mount_t *mp, const char *from_path,
             if (xipaths[0].witness == xipaths[1].witness) {
                 return 0;
             }
-            if (xipfs_file_rename(xipaths[0].witness,
+            if (xipfs_file_rename(mp, xipaths[0].witness,
                     xipaths[1].path) < 0) {
                 return -EIO;
             }
@@ -1346,7 +1384,7 @@ xipfs_rename(xipfs_mount_t *mp, const char *from_path,
                     xipaths[0].len) == 0) {
                 return -EINVAL;
             }
-            if (xipfs_file_rename(xipaths[0].witness,
+            if (xipfs_file_rename(mp, xipaths[0].witness,
                     xipaths[1].path) < 0) {
                 return -EIO;
             }
@@ -1704,10 +1742,8 @@ xipfs_execv_check(xipfs_mount_t *mp, const char *path,
 
     (void)xipfs_close(mp, &descp);
 
-#define CRT0_MAGIC_NUMBER_AND_VERSION (0xFACADE12)
-    if (last_uint32_value != CRT0_MAGIC_NUMBER_AND_VERSION)
+    if (last_uint32_value != XIPFS_CRT0_MAGIC_NUMBER_AND_VERSION)
         return -EBADF;
-#undef CRT0_MAGIC_NUMBER_AND_VERSION
 
     return 0;
 }
@@ -1724,7 +1760,7 @@ xipfs_execv(xipfs_mount_t *mp, const char *path,
     if (ret < 0)
         return ret;
 
-    if ((ret = xipfs_file_exec(xipath.witness, argv, syscalls)) < 0) {
+    if ((ret = xipfs_file_exec(mp, xipath.witness, argv, syscalls)) < 0) {
         return -EIO;
     }
 
@@ -1743,7 +1779,7 @@ xipfs_safe_execv(xipfs_mount_t *mp, const char *path,
     if (ret < 0)
         return ret;
 
-    if ((ret = xipfs_file_safe_exec(xipath.witness, argv, syscalls)) < 0) {
+    if ((ret = xipfs_file_safe_exec(mp, xipath.witness, argv, syscalls)) < 0) {
         return -EIO;
     }
 

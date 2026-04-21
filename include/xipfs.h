@@ -36,13 +36,30 @@
 #define XIPFS_H
 
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdarg.h>
 #include <limits.h>
 #include <inttypes.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <assert.h>
 
 #ifndef RIOT_VERSION
 
 #include "xipfs_config.h"
+
+/* Non-RIOT builds must provide their own synchronization primitives. */
+#if defined(XIPFS_WORKSTATION)
+
+/*
+ * When building for workstation, we just need to define mutex_t to some valid definition
+ * for compilation, but we never actually lock or unlock any mutex in the code.
+ */
+typedef void mutex_t;
+
+#else /* XIPFS_WORKSTATION */
+#error "mutex_t has not been defined"
+#endif /* XIPFS_WORKSTATION */
 
 #else /* !RIOT_VERSION */
 
@@ -147,6 +164,14 @@
  */
 #define XIPFS_NVM_PAGE_SIZE (FLASHPAGE_SIZE)
 
+#ifdef BOARD_DWM1001
+
+#define XIPFS_NVM_PAGE_ASM_ALIGNMENT (12)
+
+#else /* BOARD_DWM1001 */
+#error "XIPFS_NVM_PAGE_ASM_ALIGNMENT has not been defined for the current board"
+#endif /* BOARD_DWM1001 */
+
 #endif /* !RIOT_VERSION */
 
 
@@ -193,6 +218,24 @@
 #ifndef XIPFS_MAX_OPEN_DESC
 #error "xipfs_config.h: XIPFS_MAX_OPEN_DESC undefined"
 #endif /* !XIPFS_MAX_OPEN_DESC */
+
+#if defined(RIOT_VERSION) && defined(XIPFS_WORKSTATION)
+#error "RIOT_VERSION and XIPFS_WORKSTATION cannot be defined both at the same time"
+#endif /* !(defined(RIOT_VERSION) && defined(XIPFS_WORKSTATION)) */
+
+#if defined(RIOT_VERSION)
+
+#ifndef XIPFS_NVM_PAGE_ASM_ALIGNMENT
+#error "XIPFS_NVM_PAGE_ASM_ALIGNMENT undefined"
+#endif
+
+#endif /* !(defined(RIOT_VERSION)) */
+
+/**
+ * @def XIPFS_CRT0_MAGIC_NUMBER_AND_VERSION
+ * @brief Marker used at the end of fae executable payloads
+ */
+#define XIPFS_CRT0_MAGIC_NUMBER_AND_VERSION (0xFACADE12UL)
 
 #ifdef __cplusplus
 extern "C" {
@@ -244,13 +287,41 @@ typedef int32_t xipfs_file_position_t;
     ((off_t)XIPFS_FILE_POSITION_MAX)
 
 /**
+ * @brief Type used to store on-media offsets.
+ * @warning This type is not used for the size nor the position in the file,
+ * which both are xipfs_file_position_t.
+ * XIPFS relies on xipfs_memory_offset_t to compute the next file within the filesystem.
+ * Using offsets rather than straight pointers is used to enable crossplatform developments
+ * through all supported boards, including workstation.
+ */
+typedef uint32_t xipfs_memory_offset_t;
+
+#define XIPFS_MEMORY_OFFSET_ERASED ((xipfs_memory_offset_t)0xFFFFFFFFUL)
+
+/**
+ * By convention, xipfs support two ways to initialize a mountpoint page properties.
+ *
+ * 1) When an xipfs_mount_t's page_num is set to XIPFS_PAGE_NUM_INVALID,
+ * then XIPFS must overwrite this field by computing the actual mountpoint size thanks
+ * to page_addr, page_end and XIPFS_NVM_PAGE_SIZE.
+ *
+ * 2) When an xipfs_mount_t's page_num is different from XIPFS_PAGE_NUM_INVALID,
+ * then XIPFS must overwrite page_end_addr by computing the actual mountpoint end address
+ * thanks to page_addr, page_num and XIPFS_NVM_PAGE_SIZE.
+ *
+ * @see xipfs_mount
+ * @see xipfs_format
+ */
+#define XIPFS_PAGE_NUM_INVALID (SIZE_MAX)
+
+/**
  * @brief File data structure for xipfs
  */
 typedef struct xipfs_file_s {
     /**
-     * The address of the next file
+     * The offset from XIPFS_NVM_BASE to the next file
      */
-    struct xipfs_file_s *next;
+    xipfs_memory_offset_t next;
     /**
      * The path of the file relative to the mount point
      */
@@ -281,6 +352,7 @@ typedef struct xipfs_mount_s {
     const char *mount_path;
     size_t page_num;
     void *page_addr;
+    void *page_end_addr;
     mutex_t *execution_mutex;
     mutex_t *mutex;
 } xipfs_mount_t;
@@ -311,6 +383,36 @@ struct xipfs_statvfs {
     unsigned long f_flag;    /**< Bit mask of f_flag values. */
     unsigned long f_namemax; /**< Maximum filename length. */
 };
+
+/**
+ * @brief Converts an address to a memory offset.
+ *
+ * @param[in] mountp Mount point pointer.
+ * @param[in] pointer Memory address to convert.
+ *
+ * @return a memory offset.
+ */
+static inline xipfs_memory_offset_t
+xipfs_pointer_to_offset(const xipfs_mount_t *mountp, const void *pointer)
+{
+    assert(mountp != NULL);
+    return (xipfs_memory_offset_t)((uintptr_t)pointer - (uintptr_t)mountp->page_addr);
+}
+
+/**
+ * @brief Converts a memory offset to an address.
+ *
+ * @param[in] mountp Mount point pointer.
+ * @param[in] offset Offset to convert.
+ *
+ * @return an address as a void pointer.
+ */
+static inline void *
+xipfs_offset_to_pointer(const xipfs_mount_t *mountp, xipfs_memory_offset_t offset)
+{
+    assert(mountp != NULL);
+    return (void *)((uintptr_t)mountp->page_addr + (uintptr_t)offset);
+}
 
 /**
  * @brief Translate the given page number into the page's

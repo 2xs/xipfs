@@ -39,7 +39,12 @@
 extern "C" {
 #endif
 
+#ifdef XIPFS_WORKSTATION
+int xipfs_buffer_allocate(void);
+void xipfs_buffer_free(void);
+#endif
 int xipfs_buffer_flush(void);
+void xipfs_buffer_invalidate(void);
 int xipfs_buffer_read(void *dest, const void *src, size_t len);
 int xipfs_buffer_read_32(unsigned *dest, const void *src);
 int xipfs_buffer_read_8(char *dest, const void *src);

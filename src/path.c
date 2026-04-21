@@ -562,7 +562,7 @@ xipfs_path_new_n(xipfs_mount_t *xipfs_mp, xipfs_path_t *xipaths,
                     }
                 }
             }
-        } while ((filp = xipfs_fs_next(filp)) != NULL);
+        } while ((filp = xipfs_fs_next(xipfs_mp, filp)) != NULL);
     }
     else if (xipfs_errno == XIPFS_OK) {
         /*
@@ -602,7 +602,7 @@ xipfs_path_new_n(xipfs_mount_t *xipfs_mp, xipfs_path_t *xipaths,
 }
 
 /**
- * @pre xipfs_mp must be a pointer that references a memory
+ * @pre mp must be a pointer that references a memory
  * region containing an xipfs mount point structure which is
  * accessible and valid
  *
@@ -615,7 +615,7 @@ xipfs_path_new_n(xipfs_mount_t *xipfs_mp, xipfs_path_t *xipaths,
  *
  * @brief Wrapper to the xipfs_path_new_n function
  *
- * @param xipfs_mp A pointer to a memory region containing an
+ * @param mp A pointer to a memory region containing an
  * xipfs mount point structure
  *
  * @param xipath A pointer to a memory region containing an

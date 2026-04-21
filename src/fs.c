@@ -79,14 +79,14 @@
  */
 
 /**
- * @pre xipfs_mp must be a pointer that references a memory
+ * @pre mp must be a pointer that references a memory
  * region containing an xipfs mount point structure which is
  * accessible and valid
  *
  * @brief Retrieves the first xipfs file in the mount point's
  * linked list passed as an argument
  *
- * @param xipfs_mp A pointer to a memory region containing an
+ * @param mp A pointer to a memory region containing an
  * xipfs mount point structure
  *
  * @return Returns the address of the first xipfs file in the
@@ -100,11 +100,11 @@ xipfs_fs_head(xipfs_mount_t *mp)
     assert(mp != NULL);
 
     headp = mp->page_addr;
-    if ((int)headp->next == (int)XIPFS_FLASH_ERASE_STATE) {
+    if (headp->next == XIPFS_MEMORY_OFFSET_ERASED) {
         /* no file in the file system */
         return NULL;
     }
-    if (xipfs_file_filp_check(headp) < 0) {
+    if (xipfs_file_filp_check(mp, headp) < 0) {
         /* xipfs_errno was set */
         return NULL;
     }
@@ -119,7 +119,10 @@ xipfs_fs_head(xipfs_mount_t *mp)
  * @brief Retrieves the next xipfs file of the linked list from
  * the xipfs file structure passed as an argument
  *
- * @param xipfs_mp A pointer to a memory region containing an
+ * @param mountp A pointer to a memory region containing an
+ * xipfs mount point structure hosting filp
+ *
+ * @param filp A pointer to a memory region containing an
  * accessible xipfs file structure
  *
  * @return Returns the address of the next xipfs file of the
@@ -127,28 +130,29 @@ xipfs_fs_head(xipfs_mount_t *mp)
  * argument or NULL otherwise
  */
 xipfs_file_t *
-xipfs_fs_next(xipfs_file_t *filp)
+xipfs_fs_next(const xipfs_mount_t *mountp, xipfs_file_t *filp)
 {
     xipfs_file_t *nextp;
 
-    if (xipfs_file_filp_check(filp) < 0) {
+    if (xipfs_file_filp_check(mountp, filp) < 0) {
         /* xipfs_errno was set */
         return NULL;
     }
 
-    if (filp->next == filp) {
+    xipfs_memory_offset_t filp_off = xipfs_pointer_to_offset(mountp, filp);
+    if (filp->next == filp_off) {
         /* no more files - file system full */
         return NULL;
     }
 
-    nextp = filp->next;
+    nextp = xipfs_offset_to_pointer(mountp, filp->next);
 
-    if ((int)nextp->next == (int)XIPFS_FLASH_ERASE_STATE) {
+    if (nextp->next == XIPFS_MEMORY_OFFSET_ERASED) {
         /* no more files - file system not full */
         return NULL;
     }
 
-    if (xipfs_file_filp_check(nextp) < 0) {
+    if (xipfs_file_filp_check(mountp, nextp) < 0) {
         /* xipfs_errno was set */
         return NULL;
     }
@@ -157,14 +161,14 @@ xipfs_fs_next(xipfs_file_t *filp)
 }
 
 /**
- * @pre xipfs_mp must be a pointer that references a memory
+ * @pre mp must be a pointer that references a memory
  * region containing an xipfs mount point structure which is
  * accessible and valid
  *
  * @brief Retrieves the last xipfs file in the mount point's
  * linked list passed as an argument
  *
- * @param xipfs_mp A pointer to a memory region containing an
+ * @param mp A pointer to a memory region containing an
  * xipfs mount point structure
  *
  * @return Returns the address of the last xipfs file in the
@@ -184,7 +188,7 @@ xipfs_fs_tail(xipfs_mount_t *mp)
     do {
         tailp = filp;
         xipfs_errno = XIPFS_OK;
-        filp = xipfs_fs_next(filp);
+        filp = xipfs_fs_next(mp, filp);
     } while (filp != NULL);
 
     if (xipfs_errno != XIPFS_OK) {
@@ -196,14 +200,14 @@ xipfs_fs_tail(xipfs_mount_t *mp)
 }
 
 /**
- * @pre xipfs_mp must be a pointer that references a memory
+ * @pre mp must be a pointer that references a memory
  * region containing an xipfs mount point structure which is
  * accessible and valid
  *
  * @brief Retrieves the address of the first free NVM page in
  * the mount point passed as an argument
  *
- * @param xipfs_mp A pointer to a memory region containing an
+ * @param mp A pointer to a memory region containing an
  * xipfs mount point structure
  *
  * @return Returns the address of the first free NVM page in the
@@ -225,12 +229,13 @@ xipfs_fs_tail_next(xipfs_mount_t *mp)
         /* no file in the file system */
         return mp->page_addr;
     }
-    if (tailp->next == tailp) {
+    xipfs_memory_offset_t tailp_off = xipfs_pointer_to_offset(mp, tailp);
+    if (tailp->next == tailp_off) {
         xipfs_errno = XIPFS_EFULL;
         return NULL;
     }
 
-    return tailp->next;
+    return xipfs_offset_to_pointer(mp, tailp->next);
 }
 
 /**
@@ -274,7 +279,8 @@ int
 xipfs_fs_free_pages(xipfs_mount_t *mp)
 {
     xipfs_file_t *headp, *tailp;
-    int used, free;
+    size_t used;
+    int free;
 
     assert(mp != NULL);
 
@@ -297,25 +303,22 @@ xipfs_fs_free_pages(xipfs_mount_t *mp)
 
     assert(tailp >= headp);
 
-    assert((void *)tailp <= (void *)INT_MAX);
-    assert((INT_MAX - (int)tailp) > 0);
-    used  = (int)tailp;
+    used  = (uintptr_t)tailp;
 
-    assert(tailp->reserved > (int)0);
-    assert(tailp->reserved <= INT_MAX);
-    assert((INT_MAX - (int)used) >= tailp->reserved);
-    used += (int)tailp->reserved;
+    assert(tailp->reserved > XIPFS_FILE_POSITION_MIN);
+    assert(tailp->reserved <= XIPFS_FILE_POSITION_MAX);
+    assert((SIZE_MAX - used) >= (size_t)tailp->reserved);
+    used += (uintptr_t)tailp->reserved;
 
-    assert((void *)headp <= (void *)INT_MAX);
-    assert((int)headp <= used);
-    used -= (int)headp;
+    assert((size_t)headp <= used);
+    used -= (uintptr_t)headp;
 
     used /= XIPFS_NVM_PAGE_SIZE;
-    assert((size_t)used <= (size_t)XIPFS_NVM_NUMOF);
+    assert(used <= (size_t)XIPFS_NVM_NUMOF);
 
     assert(mp->page_num <= XIPFS_FILE_POSITION_MAX_AS_SIZE_T);
-    assert(mp->page_num <= (size_t)INT_MAX);
-    assert(used <= (int)mp->page_num);
+    assert(used <= mp->page_num);
+    assert((mp->page_num - used) < (size_t)INT_MAX);
     free = mp->page_num - used;
 
     return free;
@@ -333,7 +336,7 @@ xipfs_fs_free_pages(xipfs_mount_t *mp)
  * @brief Creates a new file in the file system specified by the
  * mount point structure passed as an argument
  *
- * @param xipfs_mp A pointer to a memory region containing an
+ * @param mp A pointer to a memory region containing an
  * xipfs mount point structure
  *
  * @param path A pointer to a path
@@ -351,7 +354,7 @@ xipfs_fs_new_file(xipfs_mount_t *mp, const char *path, xipfs_file_position_t siz
     int free_pages, reserved_pages;
     xipfs_file_t file, *filp;
     size_t reserved;
-    void *next;
+    xipfs_memory_offset_t next;
 
     if (xipfs_file_path_check(path) < 0) {
         /* xipfs_errno was set */
@@ -385,9 +388,9 @@ xipfs_fs_new_file(xipfs_mount_t *mp, const char *path, xipfs_file_position_t siz
     reserved_pages = (int)reserved / XIPFS_NVM_PAGE_SIZE;
 
     if (reserved_pages < free_pages) {
-        next = (char *)filp + reserved;
+        next = xipfs_pointer_to_offset(mp, (char *)filp + reserved );
     } else if (reserved_pages == free_pages) {
-        next = filp;
+        next = xipfs_pointer_to_offset(mp,  filp );
     } else {
         xipfs_errno = XIPFS_ENOSPACE;
         return NULL;
@@ -420,13 +423,16 @@ xipfs_fs_new_file(xipfs_mount_t *mp, const char *path, xipfs_file_position_t siz
  * @brief Removes a file from the file system and consolidates
  * it
  *
+ * @param mountp A pointer to a memory region containing an
+ * xipfs mount point structure
+ *
  * @param dst The address of the xipfs file to remove
  *
  * @return Returns zero if the function succeeds or a negative
  * value otherwise
  */
 int
-xipfs_fs_remove(xipfs_file_t *destination)
+xipfs_fs_remove(const xipfs_mount_t *mountp, xipfs_file_t *destination)
 {
     xipfs_file_t file;
     size_t pagenum, i;
@@ -439,14 +445,14 @@ xipfs_fs_remove(xipfs_file_t *destination)
     dst = destination;
     xipfs_errno = XIPFS_OK;
     /* get the next file if any */
-    if ((next = xipfs_fs_next(dst)) == NULL) {
+    if ((next = xipfs_fs_next(mountp, dst)) == NULL) {
         if (xipfs_errno != XIPFS_OK) {
             /* xipfs_errno was set */
             return -1;
         }
     }
     /* erase the file's pages */
-    if (xipfs_file_erase(dst) < 0) {
+    if (xipfs_file_erase(mountp, dst) < 0) {
         /* xipfs_errno was set */
         return -1;
     }
@@ -456,7 +462,7 @@ xipfs_fs_remove(xipfs_file_t *destination)
      */
     while (next != NULL) {
         src = next;
-        if ((next = xipfs_fs_next(src)) == NULL) {
+        if ((next = xipfs_fs_next(mountp, src)) == NULL) {
             if (xipfs_errno != XIPFS_OK) {
                 /* xipfs_errno was set */
                 return -1;
@@ -464,12 +470,22 @@ xipfs_fs_remove(xipfs_file_t *destination)
         }
         /* copy and fix up the file structure */
         (void)memcpy(&file, src, sizeof(file));
-        assert((uintptr_t)src <= (uintptr_t)((xipfs_file_t *)src)->next);
-        size = (uintptr_t)((xipfs_file_t *)src)->next - (uintptr_t)src;
-        assert(size <= XIPFS_FILE_POSITION_MAX_AS_SIZE_T);
-        file.next = (xipfs_file_t *)((uintptr_t)dst + size);
-        // This assert is aimed at detecting when (dst + size) overflows uintptr_t capacity.
-        assert((uintptr_t)file.next >= (uintptr_t)dst);
+
+        /* There's no mistake, by design, reserved must not be equal to
+         * XIPFS_FILE_POSITION_MIN aka 0.
+         * There's at least one flashpage reserved per entry.
+         */
+        assert(((xipfs_file_t *)src)->reserved > XIPFS_FILE_POSITION_MIN);
+        assert(((xipfs_file_t *)src)->reserved <= XIPFS_FILE_POSITION_MAX);
+        /*
+         * We use reserved size rather than to compute next offset delta.
+         * For a tail file in a full filesystem, next == self, and the delta
+         * would be 0, which breaks relocation metadata.
+         */
+        size = ((xipfs_file_t *)src)->reserved;
+        file.next = xipfs_pointer_to_offset(mountp, (const void *)((uintptr_t)dst + size));
+        // This assert is aimed at detecting when (dst + size) overflows void * capacity.
+        assert(file.next >= xipfs_pointer_to_offset(mountp, dst));
         if (xipfs_flash_write_unaligned(dst, &file, sizeof(file)) < 0) {
             /* xipfs_errno was set */
             return -1;
@@ -533,9 +549,13 @@ xipfs_fs_format(xipfs_mount_t *mp)
     size_t i;
 
     start_addr = mp->page_addr;
-    end_addr = (char *)start_addr + mp->page_num * XIPFS_NVM_PAGE_SIZE;
-    // Assert there was no overflow and mp->page_num > 0.
+    end_addr = mp->page_end_addr;
+
     assert(start_addr < end_addr);
+    if (start_addr >= end_addr) {
+        xipfs_errno = XIPFS_EINVALIDPAGEADDR;
+        return -1;
+    }
 
     start_page = xipfs_nvm_page(start_addr);
     end_page = xipfs_nvm_page(end_addr);
@@ -570,7 +590,7 @@ xipfs_fs_format(xipfs_mount_t *mp)
  * to the to prefix in the mount point structure passed as an
  * argument
  *
- * @param xipfs_mp A pointer to a memory region containing an
+ * @param mp A pointer to a memory region containing an
  * xipfs mount point structure
  *
  * @param from Renames all paths with this prefix
@@ -610,13 +630,13 @@ xipfs_fs_rename_all(xipfs_mount_t *mp, const char *from, const char *to)
                 (void)strncpy(&path[to_len], &filp->path[from_len],
                     XIPFS_PATH_MAX-to_len);
                 path[XIPFS_PATH_MAX-1] = '\0';
-                if (xipfs_file_rename(filp, path) < 0) {
+                if (xipfs_file_rename(mp, filp, path) < 0) {
                     /* xipfs_errno was set */
                     return -1;
                 }
                 counter++;
             }
-        } while ((filp = xipfs_fs_next(filp)) != NULL);
+        } while ((filp = xipfs_fs_next(mp, filp)) != NULL);
     }
     if (xipfs_errno != XIPFS_OK) {
         /* xipfs_errno was set */
