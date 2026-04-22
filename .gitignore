@@ -1,3 +1,7 @@
 /toolchain.mk
 *.o
 *.a
+dwm1001/
+dwm1001_pip/
+workstation/
+*.flash

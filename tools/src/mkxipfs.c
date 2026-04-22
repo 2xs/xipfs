@@ -173,6 +173,7 @@ int open_image(app_ctx_t *ctx, const char *flash_path, bool writable)
     assert(XIPFS_NVM_PAGE_SIZE > 0);
     ctx->mount.page_num = ctx->image_size / XIPFS_NVM_PAGE_SIZE;
     ctx->mount.page_addr = xipfs_nvm_addr(0);
+    ctx->mount.page_end_addr = (char *)ctx->mount.page_addr + ctx->image_size;
     /* For workstation, we don't need mutexes because they are not used
      * in code paths that are called.
      * Nonetheless, we need them to be different from NULL, because of safety checks
@@ -265,6 +266,7 @@ int create_image(const char *flash_path, const char *size_raw)
     assert(XIPFS_NVM_PAGE_SIZE > 0);
     mount.page_num = image_size / XIPFS_NVM_PAGE_SIZE;
     mount.page_addr = xipfs_nvm_addr(0);
+    mount.page_end_addr = (char *)mount.page_addr + image_size;
     /* For workstation, we don't need mutexes because they are not used
      * in code paths that are called.
      * Nonetheless, we need them to be different from NULL, because of safety checks
