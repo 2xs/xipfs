@@ -12,7 +12,7 @@
 typedef struct host_entry_s {
     char *rel_path;
     char *abs_path;
-    bool is_dir;
+    bool is_dir, is_dir_empty;
     off_t size;
 } host_entry_t;
 
@@ -85,14 +85,21 @@ static int host_collect_recursive(const char *root_dir, const char *rel_dir,
             return -1;
         }
         if (S_ISDIR(st.st_mode)) {
+
             if (host_entry_push(entries, count, cap, rel_path, abs_path, true, 0) < 0) {
                 (void)closedir(dir);
                 return -1;
             }
+
+            const size_t dir_index = *count;
+
+            /* Collect all files in the sub-hierarchy */
             if (host_collect_recursive(root_dir, rel_path, entries, count, cap) < 0) {
                 (void)closedir(dir);
                 return -1;
             }
+
+            (*entries)[dir_index - 1].is_dir_empty = (*count == dir_index);
         }
         else if (S_ISREG(st.st_mode)) {
             if (host_entry_push(entries, count, cap, rel_path, abs_path, false, st.st_size) < 0) {
@@ -134,7 +141,7 @@ static int copy_host_file_to_xipfs(app_ctx_t *ctx, const char *host_path, const
     unsigned char buf[4096];
     uint32_t exec = 0;
     bool is_fae = false;
-    if (size < 0 || (uint64_t)size > UINT32_MAX) {
+    if (size < 0 || (uint64_t)size > XIPFS_FILE_POSITION_MAX_AS_SIZE_T) {
         fprintf(stderr, "Error: file too large for xipfs '%s'.\n", host_path);
         return -1;
     }
@@ -206,8 +213,15 @@ int cmd_build(int argc, char **argv) {
         host_entries_free(entries, count);
         return 1;
     }
+    size_t payload;
     for (i = 0; i < count; i++) {
-        size_t payload = entries[i].is_dir ? XIPFS_NVM_PAGE_SIZE : (size_t)entries[i].size;
+        if (entries[i].is_dir) {
+            if (entries[i].is_dir_empty == false)
+                continue;
+            payload = 0;
+        } else {
+            payload = (size_t)entries[i].size;
+        }
         needed_pages += xipfs_reserved_for_payload(payload) / XIPFS_NVM_PAGE_SIZE;
     }
     if (needed_pages == 0)
@@ -243,6 +257,9 @@ int cmd_build(int argc, char **argv) {
         final_size = needed_size;
     char size_buf[64];
     (void)snprintf(size_buf, sizeof(size_buf), "%zu", final_size);
+    /* Create image will check final size against max theorical supported image size
+     * So there is no extra check on size here.
+     */
     if (create_image(flash_path, size_buf) != 0) {
         host_entries_free(entries, count);
         return 1;
