@@ -39,6 +39,7 @@
 #include <stdarg.h>
 #include <limits.h>
 #include <inttypes.h>
+#include <sys/stat.h>
 
 #ifndef RIOT_VERSION
 
