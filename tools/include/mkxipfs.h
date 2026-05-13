@@ -78,5 +78,6 @@ int cmd_rmdir(app_ctx_t *ctx, int argc, char **argv);
 int cmd_mv(app_ctx_t *ctx, int argc, char **argv);
 int cmd_test(void);
 int cmd_test_deep(void);
+int cmd_test_build(void);
 
 #endif

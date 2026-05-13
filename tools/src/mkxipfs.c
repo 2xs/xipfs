@@ -37,6 +37,7 @@ void usage(const char *prog)
             "  %s [--target <target_name>] [--flash <filename.flash>] mv <xipfs_src> <xipfs_dst>\n"
             "  %s [--target <target_name>] test\n"
             "  %s [--target <target_name>] test_deep\n"
+            "  %s [--target <target_name>] test_build\n"
             "\n"
             "Options:\n"
             "  --flash <filename.flash>   Flash image for commands other than create/build/test\n"
@@ -45,7 +46,7 @@ void usage(const char *prog)
             "\n"
             "Size format:\n"
             "  <bytes> or <kilobytes>k (example: 131072 or 128k)\n",
-            prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog);
+            prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog);
 
     fprintf(stderr, "\n");
     print_supported_targets_names(stderr);

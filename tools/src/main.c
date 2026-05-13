@@ -111,6 +111,17 @@ int main(int argc, char **argv)
         xipfs_buffer_free();
         return rc;
     }
+    if (strcmp(command, "test_build") == 0) {
+        if ((argc - i) != 0) {
+            fprintf(stderr, "Error: test_build does not accept extra arguments.\n");
+            usage(argv[0]);
+            xipfs_buffer_free();
+            return 1;
+        }
+        int rc = cmd_test_build();
+        xipfs_buffer_free();
+        return rc;
+    }
 
     const char *flash = resolve_flash_image(flash_opt);
     if (flash == NULL) {

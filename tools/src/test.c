@@ -9,19 +9,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-typedef struct test_state_s {
-    int total;
-    int failed;
-} test_state_t;
-
-static void test_expect(test_state_t *ts, bool cond, const char *msg)
-{
-    ts->total++;
-    if (!cond) {
-        ts->failed++;
-        fprintf(stderr, "[FAIL] %s\n", msg);
-    }
-}
+#include "test.h"
 
 static int test_fill_buffer(char *buf, size_t n, char seed)
 {
@@ -309,10 +297,5 @@ int cmd_test(void)
     close_image(&ctx);
     (void)unlink(tmp_template);
 
-    printf("Test summary: %d checks, %d failures.\n", ts.total, ts.failed);
-    if (ts.failed == 0) {
-        printf("All tests passed.\n");
-        return 0;
-    }
-    return 1;
+    return test_report(&ts);
 }
