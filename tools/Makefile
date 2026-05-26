@@ -19,10 +19,12 @@ TARGET          := bin/mkxipfs
 SOURCES         := $(wildcard src/*.c)
 OBJECTS         := $(SOURCES:src/%.c=build/%.o)
 XIPFS_LIB       := $(ROOT)/$(BOARD)/xipfs.a
+CONFIGURE       := $(ROOT)/configure.sh
 
 all: $(TARGET)
 
 $(XIPFS_LIB):
+	$(CONFIGURE) --board=$(BOARD)
 	$(MAKE) -C $(ROOT) BOARD=$(BOARD) DEBUG=$(DEBUG)
 
 build:
