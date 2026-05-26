@@ -873,24 +873,24 @@ xipfs_opendir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp,
  * @param mp The mount point to browse.
  * @param until_file The file providing the base path to find, and where to stop browsing.
  * @param path_len The prefix path length in until_file->path.
- * @retval true on the first file whose path starts by until_file->path[0..path_len - 1], different from until_file.
- * @retval false when all the files in the mount point have been browsed until until_file.
+ * @retval 1 on the first file whose path starts by until_file->path[0..path_len - 1], different from until_file.
+ * @retval 0 when all the files in the mount point have been browsed until until_file.
  */
-static bool path_find_prefix_in_files(xipfs_mount_t *mp,
-                                      const xipfs_file_t *until_file,
-                                      size_t path_len)
+static int path_find_prefix_in_files(xipfs_mount_t *mp,
+                                     const xipfs_file_t *until_file,
+                                     size_t path_len)
 {
     xipfs_file_t *file = xipfs_fs_head(mp);
     if (file == NULL)
-        return false;
+        return 0;
 
     while (file != until_file) {
         if (strncmp(file->path, until_file->path, path_len) == 0)
-            return true;
+            return 1;
         file = xipfs_fs_next(mp, file);
     }
 
-    return false;
+    return 0;
 }
 
 int
@@ -973,11 +973,11 @@ xipfs_readdir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp,
             if (current_file->path[j] != '/') {
                 return 1;
             }
-            /* On directories, check if they have been already browsed in former calls.
+            /* On directories, check if there has been already browsed in former calls.
              * In such a case, there is at least one file whose path starts with the target prefix,
              * meaning that this directory has already been returned, and then that is should be skipped.
              */
-            if (path_find_prefix_in_files(mp, current_file, j) == false) {
+            if (path_find_prefix_in_files(mp, current_file, j) == 0) {
                 return 1;
             }
             /* This directory has already been displayed, don't return and keep on browsing files */
