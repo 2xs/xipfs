@@ -864,11 +864,40 @@ xipfs_opendir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp,
 
     return 0;
 }
+/**
+ * @brief Find the first file which filename starts with a given prefix.
+ *
+ * This function browses the all filesystem found in the mount point until a given file,
+ * searching for a file whose path contains the prefix made by the file path until a provided path length.
+ *
+ * @param mp The mount point to browse.
+ * @param until_file The file providing the base path to find, and where to stop browsing.
+ * @param path_len The prefix path length in until_file->path.
+ * @retval true on the first file whose path starts by until_file->path[0..path_len - 1], different from until_file.
+ * @retval false when all the files in the mount point have been browsed until until_file.
+ */
+static bool path_find_prefix_in_files(xipfs_mount_t *mp,
+                                      const xipfs_file_t *until_file,
+                                      size_t path_len)
+{
+    xipfs_file_t *file = xipfs_fs_head(mp);
+    if (file == NULL)
+        return false;
+
+    while (file != until_file) {
+        if (strncmp(file->path, until_file->path, path_len) == 0)
+            return true;
+        file = xipfs_fs_next(mp, file);
+    }
+
+    return false;
+}
 
 int
 xipfs_readdir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp,
               xipfs_dirent_t *direntp)
 {
+    xipfs_file_t *current_file;
     size_t i, j;
     int ret;
 
@@ -888,15 +917,17 @@ xipfs_readdir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp,
 
     xipfs_errno = XIPFS_OK;
     while (descp->filp != NULL) {
+        current_file = descp->filp;
         i = 0;
+        /* Skip all common characters between file path and dirname */
         while (i < XIPFS_PATH_MAX) {
-            if (descp->filp->path[i] != descp->dirname[i]) {
+            if (current_file->path[i] != descp->dirname[i]) {
                 break;
             }
             if (descp->dirname[i] == '\0') {
                 break;
             }
-            if (descp->filp->path[i] == '\0') {
+            if (current_file->path[i] == '\0') {
                 break;
             }
             i++;
@@ -904,18 +935,24 @@ xipfs_readdir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp,
         if (i == XIPFS_PATH_MAX) {
             return -ENAMETOOLONG;
         }
+        /* Have we parsed the whole dirname ?
+         * When true, that means that the file path starts
+         * with the dirname.
+         */
         if (descp->dirname[i] == '\0') {
-            if (descp->filp->path[i] == '/') {
+            if (current_file->path[i] == '/') {
                 /* skip first slash */
                 i++;
             }
             j = i;
+            /* Copy all the remaining characters from file path
+             * until the end of the path or the first slash '/' */
             while (j < XIPFS_PATH_MAX) {
-                if (descp->filp->path[j] == '\0') {
+                if (current_file->path[j] == '\0') {
                     direntp->dirname[j-i] = '\0';
                     break;
                 }
-                if (descp->filp->path[j] == '/') {
+                if (current_file->path[j] == '/') {
                     direntp->dirname[j-i] = '/';
                     direntp->dirname[j-i+1] = '\0';
                     break;
@@ -932,10 +969,22 @@ xipfs_readdir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp,
                     return -EIO;
                 }
             }
-            /* entry was updated */
-            return 1;
+            /* On files, just return. */
+            if (current_file->path[j] != '/') {
+                return 1;
+            }
+            /* On directories, check if they have been already browsed in former calls.
+             * In such a case, there is at least one file whose path starts with the target prefix,
+             * meaning that this directory has already been returned, and then that is should be skipped.
+             */
+            if (path_find_prefix_in_files(mp, current_file, j) == false) {
+                return 1;
+            }
+            /* This directory has already been displayed, don't return and keep on browsing files */
         }
-        descp->filp = xipfs_fs_next(mp, descp->filp);
+        else {
+            descp->filp = xipfs_fs_next(mp, descp->filp);
+        }
     }
     if (xipfs_errno != XIPFS_OK) {
         return -EIO;
