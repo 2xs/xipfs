@@ -549,7 +549,7 @@ xipfs_fs_format(xipfs_mount_t *mp)
     size_t i;
 
     start_addr = mp->page_addr;
-    end_addr = mp->page_end_addr;
+    end_addr = (char *)start_addr + (mp->page_num * XIPFS_NVM_PAGE_SIZE);
 
     assert(start_addr < end_addr);
     if (start_addr >= end_addr) {

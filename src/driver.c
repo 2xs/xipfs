@@ -242,9 +242,6 @@ xipfs_mp_check(const xipfs_mount_t *mp)
     if (!xipfs_flash_in(mp->page_addr)) {
         return -EINVAL;
     }
-    if (mp->page_end_addr <= mp->page_addr) {
-        return -EINVAL;
-    }
     if (mp->page_num == 0) {
         return -EINVAL;
     }
@@ -266,11 +263,6 @@ xipfs_mp_check(const xipfs_mount_t *mp)
      * just ensure that mountpoint's page_num is less than INT_MAX to be consistent.
      */
     if (mp->page_num > (size_t)INT_MAX) {
-        return -EINVAL;
-    }
-    const size_t actual_pages_count =
-        ((size_t)(mp->page_end_addr - mp->page_addr)) / XIPFS_NVM_PAGE_SIZE;
-    if (mp->page_num != actual_pages_count) {
         return -EINVAL;
     }
     /*
@@ -315,7 +307,7 @@ xipfs_file_desc_check(const xipfs_mount_t *mp, const xipfs_file_desc_t *descp)
     assert(mp != NULL);
 
     start = (uintptr_t)mp->page_addr;
-    end = (uintptr_t)mp->page_end_addr;
+    end = start + (mp->page_num * XIPFS_NVM_PAGE_SIZE);
 
     if (descp == NULL) {
         return -EFAULT;
@@ -1016,41 +1008,6 @@ xipfs_closedir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp)
     return 0;
 }
 
-/**
- * @internal
- *
- * We only recompute mp->page_num when it has been set to XIPFS_PAGE_NUM_INVALID.
- *
- * When mp->page_num differs from XIPFS_PAGE_NUM_INVALID, we consider that all
- * page properties have been set purposely.
- *
- * These properties will be checked in xipfs_mp_check.
- *
- * @see XIPFS_PAGE_NUM_INVALID in xipfs_file.h
- */
-static inline int
-xipfs_check_mount_point_page_properties(xipfs_mount_t *mp)
-{
-    /* Is the mounpoint page num set to XIPFS_PAGE_NUM_INVALID ? */
-    if (mp->page_num == XIPFS_PAGE_NUM_INVALID) {
-
-        assert(mp->page_addr < mp->page_end_addr);
-        if (mp->page_addr >= mp->page_end_addr) {
-            xipfs_errno = XIPFS_EINVALIDPAGEADDR;
-            return -EINVAL;
-        }
-
-        mp->page_num = (mp->page_end_addr - mp->page_addr) / XIPFS_NVM_PAGE_SIZE;
-        assert(mp->page_num > 0);
-        if (mp->page_num == 0) {
-            xipfs_errno = XIPFS_EINVALIDPAGEADDR;
-            return -EINVAL;
-        }
-    }
-
-    return 0;
-}
-
 /*
  * Operations on mounted file systems
  */
@@ -1059,10 +1016,6 @@ int
 xipfs_format(xipfs_mount_t *mp)
 {
     int ret;
-
-    if ((ret = xipfs_check_mount_point_page_properties(mp)) < 0) {
-        return ret;
-    }
 
     if ((ret = xipfs_mp_check(mp)) < 0) {
         return ret;
@@ -1082,10 +1035,6 @@ xipfs_mount(xipfs_mount_t *mp)
 {
     int *start, *end;
     int ret;
-
-    if ((ret = xipfs_check_mount_point_page_properties(mp)) < 0) {
-        return ret;
-    }
 
     if ((ret = xipfs_mp_check(mp)) < 0) {
         return ret;

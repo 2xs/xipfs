@@ -164,14 +164,6 @@ typedef void mutex_t;
  */
 #define XIPFS_NVM_PAGE_SIZE (FLASHPAGE_SIZE)
 
-#ifdef BOARD_DWM1001
-
-#define XIPFS_NVM_PAGE_ASM_ALIGNMENT (12)
-
-#else /* BOARD_DWM1001 */
-#error "XIPFS_NVM_PAGE_ASM_ALIGNMENT has not been defined for the current board"
-#endif /* BOARD_DWM1001 */
-
 #endif /* !RIOT_VERSION */
 
 
@@ -299,22 +291,6 @@ typedef uint32_t xipfs_memory_offset_t;
 #define XIPFS_MEMORY_OFFSET_ERASED ((xipfs_memory_offset_t)0xFFFFFFFFUL)
 
 /**
- * By convention, xipfs support two ways to initialize a mountpoint page properties.
- *
- * 1) When an xipfs_mount_t's page_num is set to XIPFS_PAGE_NUM_INVALID,
- * then XIPFS must overwrite this field by computing the actual mountpoint size thanks
- * to page_addr, page_end and XIPFS_NVM_PAGE_SIZE.
- *
- * 2) When an xipfs_mount_t's page_num is different from XIPFS_PAGE_NUM_INVALID,
- * then XIPFS must overwrite page_end_addr by computing the actual mountpoint end address
- * thanks to page_addr, page_num and XIPFS_NVM_PAGE_SIZE.
- *
- * @see xipfs_mount
- * @see xipfs_format
- */
-#define XIPFS_PAGE_NUM_INVALID (SIZE_MAX)
-
-/**
  * @brief File data structure for xipfs
  */
 typedef struct xipfs_file_s {
@@ -352,7 +328,6 @@ typedef struct xipfs_mount_s {
     const char *mount_path;
     size_t page_num;
     void *page_addr;
-    void *page_end_addr;
     mutex_t *execution_mutex;
     mutex_t *mutex;
 } xipfs_mount_t;
