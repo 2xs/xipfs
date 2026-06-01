@@ -215,14 +215,6 @@ typedef void mutex_t;
 #error "RIOT_VERSION and XIPFS_WORKSTATION cannot be defined both at the same time"
 #endif /* !(defined(RIOT_VERSION) && defined(XIPFS_WORKSTATION)) */
 
-#if defined(RIOT_VERSION)
-
-#ifndef XIPFS_NVM_PAGE_ASM_ALIGNMENT
-#error "XIPFS_NVM_PAGE_ASM_ALIGNMENT undefined"
-#endif
-
-#endif /* !(defined(RIOT_VERSION)) */
-
 /**
  * @def XIPFS_CRT0_MAGIC_NUMBER_AND_VERSION
  * @brief Marker used at the end of fae executable payloads
