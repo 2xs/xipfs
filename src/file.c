@@ -396,14 +396,16 @@ char *xipfs_infos_file = "/.xipfs_infos";
  */
 /* TODO: Move this function into board-specific functions */
 void NAKED
-xipfs_exec_exit(int status UNUSED)
+xipfs_exec_exit(int status)
 {
 #if XIPFS_HAS_ARM_EXEC
     __asm__ volatile
     (
+        " mov r0, %0\n"
         " ldr r4, =_exec_curr_stack \n"
         " ldr sp, [r4]              \n"
         " pop {r4, pc}              \n"
+        ::"r"(status):"r0"
     );
 #else /* XIPFS_HAS_ARM_EXEC */
 
@@ -1303,6 +1305,14 @@ xipfs_file_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
     }
     entry_point = thumb(&filp->buf[0]);
     xipfs_exec_enter(crt0_context, entry_point, stack_top);
+
+    int status;
+    __asm__ volatile(
+        " mov %0, r0  \n"
+        : "=r"(status)
+    );
+
+    return status;
 #else /* XIPFS_HAS_ARM_EXEC */
 
 #if defined(XIPFS_WORKSTATION)
@@ -1318,8 +1328,6 @@ xipfs_file_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
 #endif
 
 #endif /* XIPFS_HAS_ARM_EXEC */
-
-    return 0;
 }
 
 #ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
