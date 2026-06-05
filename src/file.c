@@ -1748,7 +1748,7 @@ static void init_isr_stack_frame(isr_stack_frame_t *frame)
  */
 extern void *thread_isr_stack_end(void);
 
-void xipfs_safe_exec_enter(void *crt0_context[thread_getpid()],
+void xipfs_safe_exec_enter(void *crt0_ctx,
                            void *entrypoint,
                            void *stack)
 {
@@ -1757,7 +1757,7 @@ void xipfs_safe_exec_enter(void *crt0_context[thread_getpid()],
 
     isr_stack_frame_t *frame = (isr_stack_frame_t *)stack_ptr;
     init_isr_stack_frame(frame);
-    frame->r0 = (uint32_t)crt0_context[thread_getpid()];
+    frame->r0 = (uint32_t)crt0_ctx;
     frame->pc = (uint32_t)entrypoint;
 
     void *isr_stack_top = thread_isr_stack_end();
