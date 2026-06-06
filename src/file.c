@@ -491,7 +491,7 @@ static inline void
 exec_cleanup(void)
 {
     (void)memset(&memories_context[thread_getpid()], 0, sizeof(memories_context));
-    crt0_context = NULL;
+    crt0_context[thread_getpid()] = NULL;
     stack_top[thread_getpid()] = NULL;
 #if defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
     xipfs_safe_exec_syscalls_table = NULL;
@@ -525,7 +525,7 @@ exec_crt0_init(xipfs_file_t *filp)
     crt0_context[thread_getpid()]->bin_base = filp->buf;
 
     crt0_context[thread_getpid()]->ram_start = memories_context[thread_getpid()].ram_start;
-    crt0_context[thread_getpid()]->ram_end = &memories_context[thread_getpid()][thread_getpid()].ram_end;
+    crt0_context[thread_getpid()]->ram_end = &memories_context[thread_getpid()].ram_end;
 
     size = xipfs_file_get_size_(filp);
     crt0_context[thread_getpid()]->nvm_start = &filp->buf[size];
@@ -1644,7 +1644,7 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
         " push {r0, r4-r11, lr} \n" // save registers
     );
 
-    xipfs_file_safe_exec_svc(crt0_context, exec_entry_point, stack_top);
+    xipfs_file_safe_exec_svc(crt0_context[thread_getpid()], exec_entry_point, stack_top);
 
     __asm__ volatile(
         " pop {r1, r4-r11, lr} \n" // restore registers
