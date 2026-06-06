@@ -515,7 +515,7 @@ exec_crt0_init(xipfs_file_t *filp)
 
     /* Map crt0 context and xipfs_crt0_ctx_data onto the stack */
     crt0_context[thread_getpid()] = (crt0_ctx_t *)(void *)((&(memories_context[thread_getpid()].stktop[4])) - sizeof(crt0_ctx_t));
-    xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)(void *)(((char *)crt0_context) - sizeof(xipfs_crt0_ctx_data_t));
+    xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)(void *)(((char *)crt0_context[thread_getpid()]) - sizeof(xipfs_crt0_ctx_data_t));
     stack_top[thread_getpid()] = (char *)xipfs_crt0_ctx_data;
 
     crt0_context[thread_getpid()]->argv = xipfs_crt0_ctx_data;
