@@ -49,6 +49,7 @@
 #include "include/file.h"
 #include "include/flash.h"
 #include "thread.h"
+#include "mutex.h"
 
 #ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
 #include "include/mpu_driver.h"
@@ -329,21 +330,21 @@ extern const void *xipfs_shared_api_code_end;
  *
  * @brief The memories context of a relocatable binary
  */
-static memories_context_t memories_context[MAXTHREADS];
+static memories_context_t memories_context;
 
 /**
  * @internal
  *
  * @brief The crt0 context used to perform exec/safe_exec
  */
-static crt0_ctx_t *crt0_context[MAXTHREADS];
+static crt0_ctx_t *crt0_context;
 
 /**
  * @internal
  *
  * @brief The stack pointer used to perform exec/safe_exec
  */
-static char *stack_top[MAXTHREADS];
+static char *stack_top;
 
 #if defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
 /**
@@ -375,7 +376,8 @@ static xipfs_mpu_region_enum_t mpu_region_current_text;
  * @brief A reference to the stack's state prior to invoking
  * execv(2)
  */
-static void *_exec_curr_stack[MAXTHREADS] USED;
+static void *_exec_curr_stack[8] USED;
+static mutex_t _exec_mutex = MUTEX_INIT;
 
 /**
  * @brief A pointer to a virtual file name
@@ -490,9 +492,9 @@ static inline void *thumb(void *addr)
 static inline void
 exec_cleanup(void)
 {
-    (void)memset(&memories_context[thread_getpid()], 0, sizeof(memories_context));
-    crt0_context[thread_getpid()] = NULL;
-    stack_top[thread_getpid()] = NULL;
+    (void)memset(&memories_context, 0, sizeof(memories_context));
+    crt0_context = NULL;
+    stack_top = NULL;
 #if defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
     xipfs_safe_exec_syscalls_table = NULL;
 #endif
@@ -514,24 +516,24 @@ exec_crt0_init(xipfs_file_t *filp)
     void *end;
 
     /* Map crt0 context and xipfs_crt0_ctx_data onto the stack */
-    crt0_context[thread_getpid()] = (crt0_ctx_t *)(void *)((&(memories_context[thread_getpid()].stktop[4])) - sizeof(crt0_ctx_t));
-    xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)(void *)(((char *)crt0_context[thread_getpid()]) - sizeof(xipfs_crt0_ctx_data_t));
-    stack_top[thread_getpid()] = (char *)xipfs_crt0_ctx_data;
+    crt0_context = (crt0_ctx_t *)(void *)((&(memories_context.stktop[4])) - sizeof(crt0_ctx_t));
+    xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)(void *)(((char *)crt0_context) - sizeof(xipfs_crt0_ctx_data_t));
+    stack_top = (char *)xipfs_crt0_ctx_data;
 
-    crt0_context[thread_getpid()]->argv = xipfs_crt0_ctx_data;
+    crt0_context->argv = xipfs_crt0_ctx_data;
 
-    stack_top[thread_getpid()] = (char *)xipfs_crt0_ctx_data;
+    stack_top = (char *)xipfs_crt0_ctx_data;
 
-    crt0_context[thread_getpid()]->bin_base = filp->buf;
+    crt0_context->bin_base = filp->buf;
 
-    crt0_context[thread_getpid()]->ram_start = memories_context[thread_getpid()].ram_start;
-    crt0_context[thread_getpid()]->ram_end = &memories_context[thread_getpid()].ram_end;
+    crt0_context->ram_start = memories_context.ram_start;
+    crt0_context->ram_end = &memories_context.ram_end;
 
     size = xipfs_file_get_size_(filp);
-    crt0_context[thread_getpid()]->nvm_start = &filp->buf[size];
+    crt0_context->nvm_start = &filp->buf[size];
 
     end = (char *)filp + filp->reserved;
-    crt0_context[thread_getpid()]->nvm_end = end;
+    crt0_context->nvm_end = end;
 
     xipfs_crt0_ctx_data->file_base = filp;
 #if XIPFS_HAS_ARM_EXEC
@@ -564,7 +566,7 @@ exec_crt0_init(xipfs_file_t *filp)
 static inline void
 exec_args_init(char *const argv[])
 {
-    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context[thread_getpid()]->argv;
+    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context->argv;
 
     unsigned int argc = 0;
     while (argc < XIPFS_EXEC_ARGC_MAX &&  argv[argc] != NULL) {
@@ -590,8 +592,8 @@ exec_args_init(char *const argv[])
 static inline void
 exec_args_init_safe(char *const argv[])
 {
-    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context[thread_getpid()]->argv;
-    char *stack_ptr = stack_top[thread_getpid()];
+    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context->argv;
+    char *stack_ptr = stack_top;
     size_t arg_length;
 
     unsigned int argc = 0;
@@ -601,8 +603,8 @@ exec_args_init_safe(char *const argv[])
         stack_ptr -= arg_length + 1;
 
         /* Do we have enough space left in the stack to copy the argument ? */
-        if (stack_ptr < memories_context[thread_getpid()].stkbot) {
-            stack_top[thread_getpid()] = NULL;
+        if (stack_ptr < memories_context.stkbot) {
+            stack_top = NULL;
             return;
         }
         memcpy(stack_ptr, argv[argc], arg_length);
@@ -617,7 +619,7 @@ exec_args_init_safe(char *const argv[])
     /* Align the stack to a 4 bytes limit */
     stack_ptr -= ((uintptr_t)stack_ptr) % 4;
 
-    stack_top[thread_getpid()] = stack_ptr;
+    stack_top = stack_ptr;
 }
 
 /**
@@ -635,14 +637,14 @@ exec_args_init_safe(char *const argv[])
 static void **exec_syscalls_copy_to_stack(const void *syscalls[XIPFS_SYSCALL_MAX])
 {
     const unsigned int bytesize = sizeof(void *) * XIPFS_SYSCALL_MAX;
-    if ( (stack_top[thread_getpid()] - bytesize) < memories_context[thread_getpid()].stkbot) {
-        stack_top[thread_getpid()] = NULL;
+    if ( (stack_top - bytesize) < memories_context.stkbot) {
+        stack_top = NULL;
         return NULL;
     }
 
-    stack_top[thread_getpid()] -= bytesize;
+    stack_top -= bytesize;
     memcpy(stack_top, syscalls, bytesize);
-    return (void **)(uintptr_t)stack_top[thread_getpid()];
+    return (void **)(uintptr_t)stack_top;
 }
 
 /**
@@ -662,7 +664,7 @@ static void **exec_syscalls_copy_to_stack(const void *syscalls[XIPFS_SYSCALL_MAX
 static inline void
 exec_syscalls_init(const void *syscalls[XIPFS_SYSCALL_MAX])
 {
-    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context[thread_getpid()]->argv;
+    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context->argv;
 
     xipfs_crt0_ctx_data->syscall_table = exec_syscalls_copy_to_stack(syscalls);
     xipfs_crt0_ctx_data->is_safe_call  = 0;
@@ -687,7 +689,7 @@ exec_syscalls_init(const void *syscalls[XIPFS_SYSCALL_MAX])
 static inline void
 exec_syscalls_init_safe(const void *syscalls[XIPFS_SYSCALL_MAX])
 {
-    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context[thread_getpid()]->argv;
+    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context->argv;
 
     xipfs_crt0_ctx_data->syscall_table =
         exec_syscalls_copy_to_stack(xipfs_safe_exec_syscalls_wrappers);
@@ -739,7 +741,7 @@ exec_init_safe(xipfs_file_t *filp,
 {
     exec_crt0_init(filp);
     exec_args_init_safe(argv);
-    if(stack_top[thread_getpid()] == NULL)
+    if(stack_top == NULL)
         return;
 
     exec_syscalls_init_safe(syscalls);
@@ -1307,13 +1309,16 @@ xipfs_file_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
         return -1;
     }
 
+    mutex_lock(&_exec_mutex);
     exec_cleanup();
     exec_init(filp, argv, syscalls);
-    if (stack_top[thread_getpid()] == NULL) {
+    if (stack_top == NULL) {
+        mutex_unlock(&_exec_mutex);
         return -1;
     }
     entry_point = thumb(&filp->buf[0]);
     xipfs_exec_enter(crt0_context, entry_point, stack_top);
+    
 
     int status;
     __asm__ volatile(
@@ -1321,6 +1326,7 @@ xipfs_file_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
         : "=r"(status)
     );
 
+    mutex_unlock(&_exec_mutex);
     return status;
 #else /* XIPFS_HAS_ARM_EXEC */
 
@@ -1463,14 +1469,14 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
     /* Initialize crt0, xipfs_crt0_ctx_data */
     exec_cleanup();
     exec_init_safe(filp, argv, syscalls);
-    if (stack_top[thread_getpid()] == NULL) {
+    if (stack_top == NULL) {
         return -1;
     }
 
     /* Check memories_context members, filp alignments and shared API start address. */
     if (!(
-              ((uint32_t)memories_context[thread_getpid()].stkbot % EXEC_STACKSIZE_DEFAULT == 0)
-           && ((uint32_t)memories_context[thread_getpid()].ram_start % 4096 == 0)
+              ((uint32_t)memories_context.stkbot % EXEC_STACKSIZE_DEFAULT == 0)
+           && ((uint32_t)memories_context.ram_start % 4096 == 0)
            && ((uint32_t)filp % XIPFS_NVM_PAGE_SIZE == 0)
            && (((uint32_t)xipfs_shared_api_code_start & ~1) % XIPFS_SHARED_API_CODE_ALIGNMENT == 0)
          )) {
@@ -1565,10 +1571,10 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
      * These two cases cover up the whole 12 KB of ram, with no need for dynamic regions setting.
      */
     /* Are we on a 8 KB boundary ? */
-    if ( ((((uint32_t)memories_context[thread_getpid()].ram_start) >> 12) & 1) == 0 ) {
+    if ( ((((uint32_t)memories_context.ram_start) >> 12) & 1) == 0 ) {
         if (xipfs_mpu_configure_region(
                 XIPFS_MPU_REGION_ENUM_DATA,
-                memories_context[thread_getpid()].ram_start, 8192,
+                memories_context.ram_start, 8192,
                 XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
 
             on_mpu_setting_error(mpu_was_enabled);
@@ -1579,7 +1585,7 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
 
         if (xipfs_mpu_configure_region(
                 XIPFS_MPU_REGION_ENUM_EXTRA_DATA,
-                memories_context[thread_getpid()].ram_start + 8192, 4096,
+                memories_context.ram_start + 8192, 4096,
                 XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
 
             on_mpu_setting_error(mpu_was_enabled);
@@ -1591,7 +1597,7 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
     } else {
         if (xipfs_mpu_configure_region(
                 XIPFS_MPU_REGION_ENUM_DATA,
-                memories_context[thread_getpid()].ram_start, 4096,
+                memories_context.ram_start, 4096,
                 XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
 
             on_mpu_setting_error(mpu_was_enabled);
@@ -1602,7 +1608,7 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
 
         if (xipfs_mpu_configure_region(
                 XIPFS_MPU_REGION_ENUM_EXTRA_DATA,
-                memories_context[thread_getpid()].ram_start + 4096, 8192,
+                memories_context.ram_start + 4096, 8192,
                 XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
 
             on_mpu_setting_error(mpu_was_enabled);
@@ -1618,7 +1624,7 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
      */
     if (xipfs_mpu_configure_region(
             XIPFS_MPU_REGION_ENUM_STACK,
-            memories_context[thread_getpid()].stkbot, EXEC_STACKSIZE_DEFAULT,
+            memories_context.stkbot, EXEC_STACKSIZE_DEFAULT,
             XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
 
         on_mpu_setting_error(mpu_was_enabled);
@@ -1644,7 +1650,7 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
         " push {r0, r4-r11, lr} \n" // save registers
     );
 
-    xipfs_file_safe_exec_svc(crt0_context[thread_getpid()], exec_entry_point, stack_top);
+    xipfs_file_safe_exec_svc(crt0_context, exec_entry_point, stack_top);
 
     __asm__ volatile(
         " pop {r1, r4-r11, lr} \n" // restore registers
@@ -1829,18 +1835,18 @@ int xipfs_mem_manage_handler(void *isr_frame_ptr, uint32_t mmfar, uint32_t cfsr)
 
     /* Check if the stack frame is in user stack */
     if (is_value_in_range((uint32_t)isr_frame_ptr,
-                          (uint32_t)memories_context[thread_getpid()].stkbot,
-                          (uint32_t)memories_context[thread_getpid()].stktop + 4) == false) {
+                          (uint32_t)memories_context.stkbot,
+                          (uint32_t)memories_context.stktop + 4) == false) {
         (void)mpu_enable();
         __enable_irq();
         return -2;
     }
 
     /* Is this a text portion that is faulting ? */
-    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context[thread_getpid()]->argv;
+    xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context->argv;
     if (is_value_in_range(  fault_addr,
                             (uint32_t)xipfs_crt0_ctx_data->file_base,
-                            (uint32_t)crt0_context[thread_getpid()]->nvm_end) == false) {
+                            (uint32_t)crt0_context->nvm_end) == false) {
         printf("Illegal memory access detected at 0x%lx.\n", fault_addr);
         (void)mpu_enable();
         __enable_irq();
