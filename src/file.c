@@ -49,7 +49,6 @@
 #include "include/file.h"
 #include "include/flash.h"
 #include "thread.h"
-#include "mutex.h"
 
 #ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
 #include "include/mpu_driver.h"
@@ -377,7 +376,6 @@ static xipfs_mpu_region_enum_t mpu_region_current_text;
  * execv(2)
  */
 static void *_exec_curr_stack[8] USED;
-static mutex_t _exec_mutex = MUTEX_INIT;
 
 /**
  * @brief A pointer to a virtual file name
@@ -1309,12 +1307,10 @@ xipfs_file_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
         return -1;
     }
 
-    mutex_lock(&_exec_mutex);
     exec_cleanup();
     exec_init(filp, argv, syscalls);
     if (stack_top == NULL) {
-        mutex_unlock(&_exec_mutex);
-        return -1;
+            return -1;
     }
     entry_point = thumb(&filp->buf[0]);
     xipfs_exec_enter(crt0_context, entry_point, stack_top);
@@ -1326,7 +1322,6 @@ xipfs_file_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
         : "=r"(status)
     );
 
-    mutex_unlock(&_exec_mutex);
     return status;
 #else /* XIPFS_HAS_ARM_EXEC */
 
