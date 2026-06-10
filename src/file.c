@@ -1908,6 +1908,158 @@ void xipfs_syscall_dispatcher(unsigned int *svc_args)
         svc_args[0] = (uintptr_t)f(m, c, n);
         break;
     }
+    case XIPFS_SYSCALL_MEMCMP: {
+        const void *s1 = (const void *)svc_args[1];
+        const void *s2 = (const void *)svc_args[2];
+        size_t n = (size_t)svc_args[3];
+        xipfs_syscall_memcmp_t f = (xipfs_syscall_memcmp_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_MEMCMP];
+        svc_args[0] = (int)f(s1, s2, n);
+        break;
+    }
+    case XIPFS_SYSCALL_STRCMP: {
+        const char *s1 = (const char *)svc_args[1];
+        const char *s2 = (const char *)svc_args[2];
+        xipfs_syscall_strcmp_t f = (xipfs_syscall_strcmp_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_STRCMP];
+        svc_args[0] = (int)f(s1, s2);
+        break;
+    }
+    case XIPFS_SYSCALL_STRNCMP: {
+        const char *s1 = (const char *)svc_args[1];
+        const char *s2 = (const char *)svc_args[2];
+        size_t n = (size_t)svc_args[3];
+        xipfs_syscall_strncmp_t f = (xipfs_syscall_strncmp_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_STRNCMP];
+        svc_args[0] = (int)f(s1, s2, n);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_OPEN: {
+        /* typedef int (*xipfs_vfs_open_t)(const char *name, int flags, mode_t mode); */
+        const char *name = (const char *)svc_args[1];
+        int flags = (int)svc_args[2];
+        mode_t mode = (mode_t)svc_args[3];
+        xipfs_syscall_vfs_open_t f = (xipfs_syscall_vfs_open_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_OPEN];
+        svc_args[0] = (int)f(name, flags, mode);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_CLOSE: {
+        int fd = (int)svc_args[1];
+        xipfs_syscall_vfs_close_t f = (xipfs_syscall_vfs_close_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_CLOSE];
+        svc_args[0] = (int)f(fd);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_LSEEK: {
+        int fd = (int)svc_args[1];
+        off_t off = (off_t)svc_args[2];
+        int whence = (int)(svc_args[3]);
+        xipfs_syscall_vfs_lseek_t f = (xipfs_syscall_vfs_lseek_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_LSEEK];
+        svc_args[0] = (ssize_t)f(fd, off, whence);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_WRITE: {
+        int fd = (int)svc_args[1];
+        const void *src = (const void *)svc_args[2];
+        size_t count = (size_t)(svc_args[3]);
+        xipfs_syscall_vfs_write_t f = (xipfs_syscall_vfs_write_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_WRITE];
+        svc_args[0] = (ssize_t)f(fd, src, count);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_READ: {
+        int fd = (int)svc_args[1];
+        void *dst = (void *)svc_args[2];
+        size_t count = (size_t)(svc_args[3]);
+        xipfs_syscall_vfs_read_t f = (xipfs_syscall_vfs_read_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_READ];
+        svc_args[0] = (ssize_t)f(fd, dst, count);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_READLINE: {
+        int fd = (int)svc_args[1];
+        char *dst = (char *)svc_args[2];
+        size_t count = (size_t)(svc_args[3]);
+        xipfs_syscall_vfs_readline_t f = (xipfs_syscall_vfs_readline_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_READLINE];
+        svc_args[0] = (ssize_t)f(fd, dst, count);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_STAT: {
+        const char *name = (const char *)svc_args[1];
+        struct stat *stats = (struct stat *)svc_args[2];
+        xipfs_syscall_vfs_stat_t f = (xipfs_syscall_vfs_stat_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_STAT];
+        svc_args[0] = (int)f(name, stats);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_FSTAT: {
+        int fd = (int)svc_args[1];
+        struct stat *stats = (struct stat *)svc_args[2];
+        xipfs_syscall_vfs_fstat_t f = (xipfs_syscall_vfs_fstat_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_FSTAT];
+        svc_args[0] = (int)f(fd, stats);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_STATVFS: {
+        const char *name = (const char *)svc_args[1];
+        struct statvfs *stats = (struct statvfs *)svc_args[2];
+        xipfs_syscall_vfs_statvfs_t f = (xipfs_syscall_vfs_statvfs_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_STATVFS];
+        svc_args[0] = (int)f(name, stats);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_FSTATVFS: {
+        int fd = (int)svc_args[1];
+        struct statvfs *stats = (struct statvfs *)svc_args[2];
+        xipfs_syscall_vfs_fstatvfs_t f = (xipfs_syscall_vfs_fstatvfs_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_FSTATVFS];
+        svc_args[0] = (int)f(fd, stats);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_RENAME: {
+        const char *from_path = (const char *)svc_args[1];
+        const char *to_path = (const char *)svc_args[2];
+        xipfs_syscall_vfs_rename_t f = (xipfs_syscall_vfs_rename_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_RENAME];
+        svc_args[0] = (int)f(from_path, to_path);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_NORMALIZE_PATH: {
+        char *buffer = (char *)svc_args[1];
+        const char *path = (const char *)svc_args[2];
+        size_t buflen = (size_t)svc_args[3];
+        xipfs_syscall_vfs_normalize_path_t f = (xipfs_syscall_vfs_normalize_path_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_NORMALIZE_PATH];
+        svc_args[0] = (int)f(buffer, path, buflen);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_FSYNC: {
+        int fd = (int)svc_args[1];
+        xipfs_syscall_vfs_fsync_t f = (xipfs_syscall_vfs_fsync_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_FSYNC];
+        svc_args[0] = (int)f(fd);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_FCNTL: {
+        int fd = (int)svc_args[1];
+        int cmd = (int)svc_args[2];
+        int arg = (int)svc_args[3];
+        xipfs_syscall_vfs_fcntl_t f = (xipfs_syscall_vfs_fcntl_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_FCNTL];
+        svc_args[0] = (int)f(fd, cmd, arg);
+        break;
+    }
+    case XIPFS_SYSCALL_VFS_MKDIR: {
+        const char *name = (const char *)svc_args[1];
+        mode_t mode = (mode_t)svc_args[2];
+        xipfs_syscall_vfs_mkdir_t f = (xipfs_syscall_vfs_mkdir_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_MKDIR];
+        svc_args[0] = (int)f(name, mode);
+        break;
+    }
     default:
         return;
     }

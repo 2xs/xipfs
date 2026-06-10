@@ -41,6 +41,7 @@
 #include <limits.h>
 #include <inttypes.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <assert.h>
 
@@ -454,7 +455,7 @@ int xipfs_closedir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp);
  * enumeration declared in caller site (xipfs_format stdriot's one).
  *
  * @brief An enumeration describing the index of functions.
- * @see xipfs_execv
+ * @see xipfs_execv, xipfs_safe_execv
  */
 typedef enum xipfs_syscall_e {
     XIPFS_SYSCALL_EXIT,
@@ -467,6 +468,27 @@ typedef enum xipfs_syscall_e {
     XIPFS_SYSCALL_COPY_FILE,
     XIPFS_SYSCALL_GET_FILE_SIZE,
     XIPFS_SYSCALL_MEMSET,
+    XIPFS_SYSCALL_MEMCMP,
+    XIPFS_SYSCALL_STRCMP,
+    XIPFS_SYSCALL_STRNCMP,
+
+    /* VFS */
+    XIPFS_SYSCALL_VFS_OPEN,
+    XIPFS_SYSCALL_VFS_CLOSE,
+    XIPFS_SYSCALL_VFS_LSEEK,
+    XIPFS_SYSCALL_VFS_WRITE,
+    XIPFS_SYSCALL_VFS_READ,
+    XIPFS_SYSCALL_VFS_READLINE,
+    XIPFS_SYSCALL_VFS_STAT,
+    XIPFS_SYSCALL_VFS_FSTAT,
+    XIPFS_SYSCALL_VFS_STATVFS,
+    XIPFS_SYSCALL_VFS_FSTATVFS,
+    XIPFS_SYSCALL_VFS_RENAME,
+    XIPFS_SYSCALL_VFS_NORMALIZE_PATH,
+    XIPFS_SYSCALL_VFS_FSYNC,
+    XIPFS_SYSCALL_VFS_FCNTL,
+    XIPFS_SYSCALL_VFS_MKDIR,
+
     XIPFS_SYSCALL_MAX
 } xipfs_syscall_t;
 
@@ -483,6 +505,26 @@ typedef ssize_t (*xipfs_syscall_copy_file_t)(
 typedef int (*xipfs_syscall_get_file_size_t)(
     const char *name, size_t *size);
 typedef void *(*xipfs_syscall_memset_t)(void *m, int c, size_t n);
+typedef int (*xipfs_syscall_memcmp_t)(const void *s1, const void *s2, size_t n);
+typedef int (*xipfs_syscall_strcmp_t)(const char *s1, const char *s2);
+typedef int (*xipfs_syscall_strncmp_t)(const char *s1, const char *s2, size_t n);
+
+/* VFS */
+typedef int (*xipfs_syscall_vfs_open_t)(const char *name, int flags, mode_t mode);
+typedef int (*xipfs_syscall_vfs_close_t)(int fd);
+typedef off_t (*xipfs_syscall_vfs_lseek_t)(int fd, off_t off, int whence);
+typedef ssize_t (*xipfs_syscall_vfs_write_t)(int fd, const void *src, size_t count);
+typedef ssize_t (*xipfs_syscall_vfs_read_t)(int fd, void *dest, size_t count);
+typedef ssize_t (*xipfs_syscall_vfs_readline_t)(int fd, char *dest, size_t count);
+typedef int (*xipfs_syscall_vfs_stat_t)(const char *restrict path, struct stat *restrict buf);
+typedef int (*xipfs_syscall_vfs_fstat_t)(int fd, struct stat * buf);
+typedef int (*xipfs_syscall_vfs_statvfs_t)(const char *restrict path, struct statvfs *restrict buf);
+typedef int (*xipfs_syscall_vfs_fstatvfs_t)(int fd, struct statvfs *buf);
+typedef int (*xipfs_syscall_vfs_rename_t)(const char *from_path, const char *to_path);
+typedef int (*xipfs_syscall_vfs_normalize_path_t)(char *buf, const char *path, size_t buflen);
+typedef int (*xipfs_syscall_vfs_fsync_t)(int fd);
+typedef int (*xipfs_syscall_vfs_fcntl_t)(int fd, int cmd, int arg);
+typedef int (*xipfs_syscall_vfs_mkdir_t)(const char *name, mode_t mode);
 
 int xipfs_execv(xipfs_mount_t *mp, const char *full_path, char *const argv[],
                 const void *user_syscalls[XIPFS_SYSCALL_MAX]);

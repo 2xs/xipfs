@@ -217,6 +217,337 @@ static void *memset_wrapper(void *m, int c, size_t n) {
     return res;
 }
 
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int memcmp_wrapper(const void *s1, const void *s2, size_t n) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "mov r3, %4                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_MEMCMP), "r"(s1), "r"(s2), "r"(n)
+        : "r0", "r1", "r2", "r3"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int strcmp_wrapper(const char *s1, const char *s2) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_STRCMP), "r"(s1), "r"(s2)
+        : "r0", "r1", "r2"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int strncmp_wrapper(const char *s1, const char *s2, size_t n) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "mov r3, %4                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_STRNCMP), "r"(s1), "r"(s2), "r"(n)
+        : "r0", "r1", "r2", "r3"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int open_wrapper(const char *name, int flags, mode_t mode) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "mov r3, %4                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_OPEN), "r"(name), "r"(flags), "r"(mode)
+        : "r0", "r1", "r2", "r3"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int close_wrapper(int fd) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_CLOSE), "r"(fd)
+        : "r0", "r1"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static off_t lseek_wrapper(int fd, off_t off, int whence) {
+    off_t res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "mov r3, %4                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_LSEEK), "r"(fd), "r"(off), "r"(whence)
+        : "r0", "r1", "r2", "r3"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static ssize_t write_wrapper(int fd, const void *src, size_t count) {
+    ssize_t res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "mov r3, %4                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_WRITE), "r"(fd), "r"(src), "r"(count)
+        : "r0", "r1", "r2", "r3"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static ssize_t read_wrapper(int fd, void *dst, size_t count) {
+    ssize_t res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "mov r3, %4                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_READ), "r"(fd), "r"(dst), "r"(count)
+        : "r0", "r1", "r2", "r3"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static ssize_t readline_wrapper(int fd, char *dst, size_t count) {
+    ssize_t res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "mov r3, %4                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_READ), "r"(fd), "r"(dst), "r"(count)
+        : "r0", "r1", "r2", "r3"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int stat_wrapper(const char *restrict path, struct stat *restrict buf) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_STAT), "r"(path), "r"(buf)
+        : "r0", "r1", "r2"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int fstat_wrapper(int fd, struct stat *buf) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_FSTAT), "r"(fd), "r"(buf)
+        : "r0", "r1", "r2"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int statvfs_wrapper(const char *restrict path, struct statvfs *restrict buf) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_STATVFS), "r"(path), "r"(buf)
+        : "r0", "r1", "r2"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int fstatvfs_wrapper(int fd, struct statvfs *buf) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_FSTATVFS), "r"(fd), "r"(buf)
+        : "r0", "r1", "r2"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int rename_wrapper(const char *from_path, const char *to_path) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_RENAME), "r"(from_path), "r"(to_path)
+        : "r0", "r1", "r2"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int normalize_path_wrapper(char *buf, const char *path, size_t buflen) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "mov r3, %4                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_NORMALIZE_PATH), "r"(buf), "r"(path), "r"(buflen)
+        : "r0", "r1", "r2", "r3"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int fsync_wrapper(int fd) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_FSYNC), "r"(fd)
+        : "r0", "r1"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int fcntl_wrapper(int fd, int cmd, int arg) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "mov r3, %4                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_FCNTL), "r"(fd), "r"(cmd), "r"(arg)
+        : "r0", "r1", "r2", "r3"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
+static int mkdir_wrapper(const char *name, mode_t mode) {
+    int res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VFS_MKDIR), "r"(name), "r"(mode)
+        : "r0", "r1", "r2"
+    );
+
+    return res;
+}
+
 __attribute__((section(".xipfs_shared_api_code_in"), aligned(XIPFS_SHARED_API_CODE_SIZE), used, naked))
 static void end_xipfs_shared_api_code_in_function(void){}
 
@@ -239,7 +570,27 @@ const void *xipfs_safe_exec_syscalls_wrappers[XIPFS_SYSCALL_MAX] = {
     [      XIPFS_SYSCALL_SET_LED] = set_led_wrapper,
     [    XIPFS_SYSCALL_COPY_FILE] = copy_file_wrapper,
     [XIPFS_SYSCALL_GET_FILE_SIZE] = get_file_size_wrapper,
-    [       XIPFS_SYSCALL_MEMSET] = memset_wrapper
+    [       XIPFS_SYSCALL_MEMSET] = memset_wrapper,
+    [       XIPFS_SYSCALL_MEMCMP] = memcmp_wrapper,
+    [       XIPFS_SYSCALL_STRCMP] = strcmp_wrapper,
+    [      XIPFS_SYSCALL_STRNCMP] = strncmp_wrapper,
+
+    /* VFS */
+    [          XIPFS_SYSCALL_VFS_OPEN] = open_wrapper,
+    [         XIPFS_SYSCALL_VFS_CLOSE] = close_wrapper,
+    [         XIPFS_SYSCALL_VFS_LSEEK] = lseek_wrapper,
+    [         XIPFS_SYSCALL_VFS_WRITE] = write_wrapper,
+    [          XIPFS_SYSCALL_VFS_READ] = read_wrapper,
+    [      XIPFS_SYSCALL_VFS_READLINE] = readline_wrapper,
+    [          XIPFS_SYSCALL_VFS_STAT] = stat_wrapper,
+    [         XIPFS_SYSCALL_VFS_FSTAT] = fstat_wrapper,
+    [       XIPFS_SYSCALL_VFS_STATVFS] = statvfs_wrapper,
+    [      XIPFS_SYSCALL_VFS_FSTATVFS] = fstatvfs_wrapper,
+    [        XIPFS_SYSCALL_VFS_RENAME] = rename_wrapper,
+    [XIPFS_SYSCALL_VFS_NORMALIZE_PATH] = normalize_path_wrapper,
+    [         XIPFS_SYSCALL_VFS_FSYNC] = fsync_wrapper,
+    [         XIPFS_SYSCALL_VFS_FCNTL] = fcntl_wrapper,
+    [         XIPFS_SYSCALL_VFS_MKDIR] = mkdir_wrapper,
 };
 
 #endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */
