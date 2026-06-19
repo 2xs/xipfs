@@ -1365,15 +1365,16 @@ static void on_mpu_setting_error(bool mpu_was_enabled) {
  *
  * @param stack A pointer to the top of the binary's stack
  */
-static void NAKED xipfs_file_safe_exec_svc(crt0_ctx_t *crt0 UNUSED, void *entrypoint UNUSED, void *stack UNUSED) {
+static USED void NAKED xipfs_file_safe_exec_svc(crt0_ctx_t *crt0 UNUSED,
+                                                void *entrypoint UNUSED, void *stack UNUSED) {
     /**
      * The arguments are passed to the SVC call through r0, r1, and r2
      */
     __asm__ volatile(
-        " push   {lr}                        \n"
-        " ldr    r4, =_exec_curr_stack       \n" // get the current stack
-        " str    sp, [r4]                    \n" // save current SP
-        " svc #" STR(XIPFS_ENTER_SVC_NUMBER) " \n");
+        " push   {lr}                           \n"
+        " ldr    r4, =_exec_curr_stack          \n" // get the current stack
+        " str    sp, [r4]                       \n" // save current SP
+        " svc #" STR(XIPFS_ENTER_SVC_NUMBER) "  \n");
 }
 
 /**
@@ -1627,17 +1628,17 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
     __enable_irq();
 
     __asm__ volatile(
-        " mrs r0, msp           \n" // save main stack pointer
-        " push {r0, r4-r11, lr} \n" // save registers
-    );
-
-    xipfs_file_safe_exec_svc(crt0_context, exec_entry_point, stack_top);
-
-    __asm__ volatile(
-        " pop {r1, r4-r11, lr} \n" // restore registers
-        " msr msp, r1          \n" // restore main stack pointer
-        " mov %0, r0           \n" // retrieve exec status
+        " mrs r0, msp                   \n" // save main stack pointer
+        " push {r0, r4-r11, lr}         \n" // save registers
+        " mov r0, %1                    \n"
+        " mov r1, %2                    \n"
+        " mov r2, %3                    \n"
+        " bl xipfs_file_safe_exec_svc   \n"
+        " pop {r1, r4-r11, lr}          \n" // restore registers
+        " msr msp, r1                   \n" // restore main stack pointer
+        " mov %0, r0                    \n" // retrieve exec status
         : "=r"(status)
+        : "r"(crt0_context), "r"(exec_entry_point), "r"(stack_top)
     );
 
     __disable_irq();
