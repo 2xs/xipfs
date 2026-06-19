@@ -401,10 +401,10 @@ xipfs_exec_exit(int status)
 #if XIPFS_HAS_ARM_EXEC
     __asm__ volatile
     (
-        " mov r0, %0\n"
+        " mov r0, %0                \n"
         " ldr r4, =_exec_curr_stack \n"
         " ldr sp, [r4]              \n"
-        " pop {r4, pc}              \n"
+        " pop {r4-r11, pc}          \n"
         ::"r"(status):"r0"
     );
 #else /* XIPFS_HAS_ARM_EXEC */
@@ -436,7 +436,7 @@ xipfs_exec_enter(void *crt0_ctx UNUSED,
 #if XIPFS_HAS_ARM_EXEC
     __asm__ volatile
     (
-        " push {r4, lr}             \n"
+        " push {r4-r11, lr}         \n"
         " ldr r4, =_exec_curr_stack \n"
         " str sp, [r4]              \n"
         " mov sp, r2                \n"
