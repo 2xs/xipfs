@@ -495,6 +495,7 @@ typedef enum xipfs_syscall_e {
     XIPFS_SYSCALL_VSNPRINTF          = 28,
 
     XIPFS_SYSCALL_SYS_PRINT          = 29,
+    XIPFS_SYSCALL_SYS_PRINT_FMT      = 30,
 
     XIPFS_SYSCALL_MAX
 } xipfs_syscall_t;
