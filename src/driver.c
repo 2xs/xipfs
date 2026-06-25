@@ -1573,6 +1573,10 @@ xipfs_statvfs(xipfs_mount_t *mp, const char *restrict path,
     if (path[0] == '\0') {
         return -ENOENT;
     }
+    /* root is always available and valid */
+    if ( (path[0] == '/') && (path[1] == '\0') ) {
+        goto retrieve_fs_properties;
+    }
     len = strnlen(path, XIPFS_PATH_MAX);
     if (len == XIPFS_PATH_MAX) {
         return -ENAMETOOLONG;
@@ -1595,6 +1599,7 @@ xipfs_statvfs(xipfs_mount_t *mp, const char *restrict path,
         return -EIO;
     }
 
+retrieve_fs_properties:
     if ((ret = xipfs_fs_get_page_number(mp)) < 0) {
         return -EIO;
     }
