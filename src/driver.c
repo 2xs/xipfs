@@ -523,6 +523,12 @@ xipfs_open(xipfs_mount_t *mp, xipfs_file_desc_t *descp,
     if (name == NULL) {
         return -EFAULT;
     }
+    if (name[0] == '\0') {
+        return -ENOENT;
+    }
+    if (name[0] == '/' && name[1] == '\0') {
+        return -EISDIR;
+    }
 
     /* only these flags are supported */
 #define XIPFS_SUPPORTED_FLAGS   \
@@ -1549,16 +1555,44 @@ int
 xipfs_statvfs(xipfs_mount_t *mp, const char *restrict path,
               struct xipfs_statvfs *restrict buf)
 {
+    xipfs_path_t xipath;
+    size_t len;
     unsigned free_pages, page_number;
     int ret;
-
-    UNUSED(path);
 
     if ((ret = xipfs_mp_check(mp)) < 0) {
         return ret;
     }
     if (buf == NULL) {
         return -EFAULT;
+    }
+
+    if (path == NULL) {
+        return -EFAULT;
+    }
+    if (path[0] == '\0') {
+        return -ENOENT;
+    }
+    len = strnlen(path, XIPFS_PATH_MAX);
+    if (len == XIPFS_PATH_MAX) {
+        return -ENAMETOOLONG;
+    }
+
+    if (xipfs_path_new(mp, &xipath, path) < 0) {
+        return -EIO;
+    }
+    switch (xipath.info) {
+    case XIPFS_PATH_EXISTS_AS_FILE:
+    case XIPFS_PATH_EXISTS_AS_EMPTY_DIR:
+    case XIPFS_PATH_EXISTS_AS_NONEMPTY_DIR:
+        break;
+    case XIPFS_PATH_INVALID_BECAUSE_NOT_DIRS:
+        return -ENOTDIR;
+    case XIPFS_PATH_INVALID_BECAUSE_NOT_FOUND:
+    case XIPFS_PATH_CREATABLE:
+        return -ENOENT;
+    default:
+        return -EIO;
     }
 
     if ((ret = xipfs_fs_get_page_number(mp)) < 0) {

@@ -62,6 +62,7 @@ static const char *xipfs_errno_to_str[XIPFS_ENUM] = {
     [XIPFS_EEMPTY] = "path is empty",
     [XIPFS_EINVAL] = "invalid character",
     [XIPFS_ENULTER] = "path is not null-terminated",
+    [XIPFS_EINVALP] = "path is invalid",
     [XIPFS_ENULLF] = "file pointer is null",
     [XIPFS_EALIGN] = "file is not page-aligned",
     [XIPFS_EOUTNVM] = "file is outside NVM space",

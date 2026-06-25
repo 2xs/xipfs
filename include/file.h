@@ -53,7 +53,6 @@ xipfs_file_position_t xipfs_file_get_max_pos(const xipfs_mount_t *mountp, const 
 xipfs_file_position_t xipfs_file_get_reserved(const xipfs_mount_t *mountp, const xipfs_file_t *filp);
 xipfs_file_position_t xipfs_file_get_size(const xipfs_mount_t *mountp, const xipfs_file_t *filp);
 xipfs_file_position_t xipfs_file_get_size_(const xipfs_file_t *filp);
-int xipfs_file_path_check(const char *path);
 int xipfs_file_read_8(const xipfs_mount_t *mountp, xipfs_file_t *filp, xipfs_file_position_t pos, char *byte);
 int xipfs_file_rename(const xipfs_mount_t *mountp, xipfs_file_t *filp, const char *to_path);
 int xipfs_file_set_size(const xipfs_mount_t *mountp, xipfs_file_t *filp, xipfs_file_position_t size);

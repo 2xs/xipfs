@@ -56,6 +56,7 @@
 #include "include/file.h"
 #include "include/flash.h"
 #include "include/fs.h"
+#include "include/path.h"
 
 /*
  * Macro definition
@@ -356,7 +357,7 @@ xipfs_fs_new_file(xipfs_mount_t *mp, const char *path, xipfs_file_position_t siz
     size_t reserved;
     xipfs_memory_offset_t next;
 
-    if (xipfs_file_path_check(path) < 0) {
+    if (xipfs_path_check(path) < 0) {
         /* xipfs_errno was set */
         return NULL;
     }

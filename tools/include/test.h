@@ -9,12 +9,18 @@ typedef struct test_state_s {
     size_t failed;
 } test_state_t;
 
-static inline void test_expect(test_state_t *ts, bool cond, const char *msg)
+static inline void test_expect(test_state_t *ts, bool cond, const char *fmt, ...)
 {
     ts->total++;
     if (!cond) {
+        va_list ap;
+
         ts->failed++;
-        fprintf(stderr, "[FAIL] %s\n", msg);
+        fprintf(stderr, "[FAIL] ");
+        va_start(ap, fmt);
+        vfprintf(stderr, fmt, ap);
+        va_end(ap);
+        fprintf(stderr, "\n");
     }
 }
 

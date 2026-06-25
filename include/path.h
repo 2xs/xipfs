@@ -133,6 +133,24 @@ typedef struct xipfs_path_s {
     unsigned char info;
 } xipfs_path_t;
 
+/**
+ * @brief Checks if the character passed as an argument is in
+ * the xipfs charset
+ *
+ * @param c The character to check
+ *
+ * @return Returns one if the character passed as an argument is
+ * in the xipfs charset or a zero otherwise
+ */
+static inline int xipfs_path_char_check(char c)
+{
+    return (c >= '0' && c <= '9') ||
+           (c >= 'A' && c <= 'Z') ||
+           (c >= 'a' && c <= 'z') ||
+            c == '/' || c == '.'  ||
+            c == '-' || c == '_';
+}
+int xipfs_path_check(const char *path);
 int xipfs_path_new(xipfs_mount_t *vfs_mp, xipfs_path_t *xipath, const char *path);
 int xipfs_path_new_n(xipfs_mount_t *mp, xipfs_path_t *xipath, const char **path, size_t n);
 

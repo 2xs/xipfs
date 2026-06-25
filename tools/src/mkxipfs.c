@@ -38,6 +38,7 @@ void usage(const char *prog)
             "  %s [--target <target_name>] test\n"
             "  %s [--target <target_name>] test_deep\n"
             "  %s [--target <target_name>] test_build\n"
+            "  %s [--target <target_name>] test_check_path [verbose]\n"
             "\n"
             "Options:\n"
             "  --flash <filename.flash>   Flash image for commands other than create/build/test\n"
@@ -46,7 +47,7 @@ void usage(const char *prog)
             "\n"
             "Size format:\n"
             "  <bytes> or <kilobytes>k (example: 131072 or 128k)\n",
-            prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog);
+            prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog);
 
     fprintf(stderr, "\n");
     print_supported_targets_names(stderr);
@@ -121,6 +122,24 @@ int ask_alignment(size_t initial_size, size_t *aligned_size)
     return 0;
 }
 
+void init_mountpoint(xipfs_mount_t *mp, size_t bytesize) {
+    if (mp == NULL)
+        return;
+    memset(mp, 0, sizeof(*mp));
+    mp->magic = XIPFS_MAGIC;
+    mp->mount_path = "/";
+    assert(XIPFS_NVM_PAGE_SIZE > 0);
+    mp->page_num = bytesize / XIPFS_NVM_PAGE_SIZE;
+    mp->page_addr = xipfs_nvm_addr(0);
+    /* For workstation, we don't need mutexes because they are not used
+     * in code paths that are called.
+     * Nonetheless, we need them to be different from NULL, because of safety checks
+     * done within XIPFS.
+     */
+    mp->execution_mutex = (void *)0xDEADBEEF;
+    mp->mutex = (void *)0xDEADBEEF;
+}
+
 int open_image(app_ctx_t *ctx, const char *flash_path, bool writable)
 {
     struct stat st;
@@ -168,19 +187,7 @@ int open_image(app_ctx_t *ctx, const char *flash_path, bool writable)
 
     xipfs_workstation_nvm_base = (uintptr_t)ctx->mapping;
 
-    memset(&ctx->mount, 0, sizeof(ctx->mount));
-    ctx->mount.magic = XIPFS_MAGIC;
-    ctx->mount.mount_path = "/";
-    assert(XIPFS_NVM_PAGE_SIZE > 0);
-    ctx->mount.page_num = ctx->image_size / XIPFS_NVM_PAGE_SIZE;
-    ctx->mount.page_addr = xipfs_nvm_addr(0);
-    /* For workstation, we don't need mutexes because they are not used
-     * in code paths that are called.
-     * Nonetheless, we need them to be different from NULL, because of safety checks
-     * done within XIPFS.
-     */
-    ctx->mount.execution_mutex = (void *)0xDEADBEEF;
-    ctx->mount.mutex = (void *)0xDEADBEEF;
+    init_mountpoint(&ctx->mount, ctx->image_size);
 
     int mount_ret = xipfs_mount(&ctx->mount);
     if (mount_ret < 0) {

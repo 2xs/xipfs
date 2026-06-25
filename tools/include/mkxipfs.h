@@ -46,6 +46,11 @@ void print_target_configuration(const char *target_name);
 void print_current_target_configuration(void);
 int set_target_nvm_configuration(const char *target_opt);
 int make_xipfs_path(const char *input, char *out, size_t out_sz);
+/**
+ * @brief Initialize mountpoint struct members.
+ * @warning Callers still have to use xipfs_format(mp)/xipfs_mount(mp) after that.
+ */
+void init_mountpoint(xipfs_mount_t *mp, size_t bytesize);
 int open_image(app_ctx_t *ctx, const char *flash_path, bool writable);
 void close_image(app_ctx_t *ctx);
 int create_image(const char *flash_path, const char *size_raw);
@@ -79,5 +84,6 @@ int cmd_mv(app_ctx_t *ctx, int argc, char **argv);
 int cmd_test(void);
 int cmd_test_deep(void);
 int cmd_test_build(void);
+int cmd_test_check_path(int argc, char **argv);
 
 #endif

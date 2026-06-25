@@ -473,6 +473,164 @@ xipfs_path_init(xipfs_path_t *xipath, const char *path)
  * accessible, null-terminated, starts with a slash, normalized,
  * and shorter than XIPFS_PATH_MAX
  *
+ * @brief Checks that a path is not NULL, nor a non-empty normalized
+ * string, containing only authorized chars, terminated by '\0',
+ * and whose length is less than XIPFS_PATH_MAX.
+ *
+ * @param path A pointer referencing an accessible memory region
+ * containing path.
+ *
+ * @retval ==0 if the function succeeds.
+ * @retval <0 otherwise.
+ */
+int xipfs_path_check(const char *path)
+{
+    size_t i;
+
+    if (path == NULL) {
+        xipfs_errno = XIPFS_ENULLP;
+        return -1;
+    }
+
+    if (path[0] == '\0') {
+        xipfs_errno = XIPFS_EEMPTY;
+        return -1;
+    }
+
+    /* WARNING Antislash character '\' is not in autorized XiPFS path charset */
+
+    for (i = 0; ((size_t)i < XIPFS_PATH_MAX) && (path[i] != '\0'); i++) {
+        /* Looking for segment opening '/' character */
+        if (path[i] != '/') {
+            xipfs_errno = XIPFS_EINVALP;
+            return -1;
+        }
+
+        if ((i + 1) >= XIPFS_PATH_MAX) {
+            /* Trailing '/' character, and no '\0' char. */
+            goto no_nt_str;
+        }
+
+        switch (path[i + 1]) {
+            case '\0': {
+                /*
+                 * "/" detected.
+                 * Trailing '/' character, with '\0' char.
+                 * Legit.
+                 */
+                return 0;
+            }
+            case '/' : {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcomment"
+                /* "//*" detected */
+#pragma GCC diagnostic pop
+                xipfs_errno = XIPFS_EINVALP;
+                return -1;
+            }
+            case '.' : {
+                /* "/.*" in progress */
+                if ((i + 2) >= XIPFS_PATH_MAX) {
+                    /* Trailing '/', '.' characters sequence, and no '\0' char */
+                    goto no_nt_str;
+                }
+                switch (path[i + 2]) {
+                    case '\0' : {
+                        /*
+                         * Trailing "/." detected.
+                         * Trailing '/', '.' characters sequence, with '\0' char.
+                         */
+                        xipfs_errno = XIPFS_EINVALP;
+                        return -1;
+                    }
+                    case '/' : {
+                        /* '/', '.', '/' characters sequence detected, with or without '\0' char */
+                        xipfs_errno = XIPFS_EINVALP;
+                        return -1;
+                    }
+                    case '.' : {
+                        /* "/..*" in progress */
+                        if ((i + 3) >= XIPFS_PATH_MAX) {
+                            /* Trailing '/', '.', '.' characters with no '\0' */
+                            goto no_nt_str;
+                        }
+                        if ((path[i + 3] == '\0') || (path[i + 3] == '/')) {
+                            /*
+                             * Trailing "/.."
+                             * OR
+                             * '/', '.', '.', '/' characters sequence detected.
+                             */
+                            xipfs_errno = XIPFS_EINVALP;
+                            return - 1;
+                        }
+                        /* "/..?" in progress */
+                        i += 3;
+                        break;
+                    }
+                    default : {
+                        /* "/.?" in progress */
+                        i += 2;
+                    }
+                }
+                break;
+            }
+            default :{
+                break;
+            }
+        }
+
+        /*
+         * Looking from the next character in path for segment closing '/' character,
+         * which will be the next segment opening char.
+         *
+         * Please mind the i++ right below.
+         */
+        i++;
+        for (; (size_t)i < XIPFS_PATH_MAX; i++) {
+            if (path[i] == '\0') {
+                /*
+                 * We have parsed a valid sequence of characters until the '\0' character,
+                 * without founding any closing '/' character.
+                 */
+                return 0;
+            }
+
+            if (path[i] == '/') {
+                i -= 1;
+                break;
+            }
+
+            if (xipfs_path_char_check(path[i]) < 0) {
+                /* An invalid char has been detected. */
+                xipfs_errno = XIPFS_EINVALP;
+                return -1;
+            }
+        }
+
+        /*
+         * At this stage, either a '/' character has been met or i >= XIPFS_PATH_MAX.
+         * The first part will be handled by the first if at the beginning of the loop.
+         * The latter part will be handled by the STOP condition of the foor loop.
+         */
+    }
+
+no_nt_str :
+    xipfs_errno = XIPFS_ENULTER;
+    return -1;
+}
+
+/**
+ * @pre xipfs_mp must be a pointer that references a memory
+ * region containing an xipfs mount point structure which is
+ * accessible and valid
+ *
+ * @pre xipaths must be a pointer that references an accessible
+ * memory region
+ *
+ * @pre path must be a pointer that references a path which is
+ * accessible, null-terminated, starts with a slash, normalized,
+ * and shorter than XIPFS_PATH_MAX
+ *
  * @brief Attempts to identify the nature of the paths provided
  * as arguments and saves the results in the xipfs path
  * structures
@@ -502,10 +660,7 @@ xipfs_path_new_n(xipfs_mount_t *xipfs_mp, xipfs_path_t *xipaths,
     assert(paths != NULL);
 
     for (j = 0; j < n; j++) {
-        if (paths[j][0] == '\0') {
-            return -1;
-        }
-        if (paths[j][0] != '/') {
+        if (xipfs_path_check(paths[j]) < 0) {
             return -1;
         }
         xipfs_path_init(&xipaths[j], paths[j]);

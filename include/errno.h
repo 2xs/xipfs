@@ -64,6 +64,10 @@ enum xipfs_errno_e {
      */
     XIPFS_ENULTER,
     /**
+     * Path is invalid
+     */
+    XIPFS_EINVALP,
+    /**
      * File pointer is null
      */
     XIPFS_ENULLF,

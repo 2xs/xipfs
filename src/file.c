@@ -48,6 +48,7 @@
 #include "include/errno.h"
 #include "include/file.h"
 #include "include/flash.h"
+#include "include/path.h"
 
 #ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
 #include "include/mpu_driver.h"
@@ -742,67 +743,6 @@ exec_init_safe(xipfs_file_t *filp,
  */
 
 /**
- * @internal
- *
- * @brief Checks if the character passed as an argument is in
- * the xipfs charset
- *
- * @param c The character to check
- *
- * @return Returns one if the character passed as an argument is
- * in the xipfs charset or a zero otherwise
- */
-static int
-xipfs_file_path_charset_check(char c)
-{
-    return (c >= '0' && c <= '9') ||
-           (c >= 'A' && c <= 'Z') ||
-           (c >= 'a' && c <= 'z') ||
-            c == '/' || c == '.'  ||
-            c == '-' || c == '_';
-}
-
-/**
- * @pre path must be a pointer that references a path which is
- * accessible, null-terminated, starts with a slash, normalized,
- * and shorter than XIPFS_PATH_MAX
- *
- * @brief Checks if the path passed as an argument is a valid
- * xipfs path
- *
- * @param path The path to check
- *
- * @return Returns zero if the path passed an an argument is a
- * valid xipfs path or a negative value otherwise
- */
-int
-xipfs_file_path_check(const char *path)
-{
-    size_t i;
-
-    if (path == NULL) {
-        xipfs_errno = XIPFS_ENULLP;
-        return -1;
-    }
-    if (path[0] == '\0') {
-        xipfs_errno = XIPFS_EEMPTY;
-        return -1;
-    }
-    for (i = 0; i < XIPFS_PATH_MAX && path[i] != '\0'; i++) {
-        if (xipfs_file_path_charset_check(path[i]) == 0) {
-            xipfs_errno = XIPFS_EINVAL;
-            return -1;
-        }
-    }
-    if (path[i] != '\0') {
-        xipfs_errno = XIPFS_ENULTER;
-        return -1;
-    }
-
-    return 0;
-}
-
-/**
  * @pre filp must be a pointer to an accessible and valid xipfs
  * file structure
  *
@@ -866,7 +806,7 @@ xipfs_file_filp_check(const xipfs_mount_t *mountp, const xipfs_file_t *filp)
         xipfs_errno = XIPFS_EINVAL;
         return -1;
     }
-    if (xipfs_file_path_check(filp->path) < 0) {
+    if (xipfs_path_check(filp->path) < 0) {
         /* xipfs_errno was set */
         return -1;
     }
@@ -1150,7 +1090,7 @@ xipfs_file_rename(const xipfs_mount_t *mountp, xipfs_file_t *filp, const char *t
         return -1;
     }
 
-    if (xipfs_file_path_check(to_path) < 0) {
+    if (xipfs_path_check(to_path) < 0) {
         /* xipfs_errno was set */
         return -1;
     }
