@@ -74,6 +74,40 @@ static int vprintf_wrapper(const char * format, va_list va) {
 }
 
 __attribute__((section(".xipfs_shared_api_code_in")))
+static int vsnprintf_wrapper(char * restrict str, size_t size,
+                             const char * restrict format, va_list ap) {
+    int res;
+    /* WARNING:
+     * To prevent from managing the stack manually in order to respect the ARM ABI convention,
+     * we copy parameters to a struct declared on stack, and pass its address.
+     *
+     * Syscall handler will use that address, to retrieve str, size, format and ap from the structure.
+     *
+     * volatile has been added here otherwise GCC do not generate stack reservation and fields initialization.
+     * Maybe because as it cannot 'see' that fields will be accessed, initialization is evaluated as meaningless
+     * and skipped at code generation time.
+     */
+    volatile xipfs_syscall_vsnprintf_params_t params = {
+        .str  = str,
+        .size = size,
+        .format = format,
+        .ap = ap
+    };
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_VSNPRINTF), "r"(&params)
+        : "r0", "r1"
+    );
+
+    return res;
+}
+
+__attribute__((section(".xipfs_shared_api_code_in")))
 static int get_temp_wrapper(void) {
     int res;
 
@@ -591,6 +625,8 @@ const void *xipfs_safe_exec_syscalls_wrappers[XIPFS_SYSCALL_MAX] = {
     [         XIPFS_SYSCALL_VFS_FSYNC] = fsync_wrapper,
     [         XIPFS_SYSCALL_VFS_FCNTL] = fcntl_wrapper,
     [         XIPFS_SYSCALL_VFS_MKDIR] = mkdir_wrapper,
+
+    [         XIPFS_SYSCALL_VSNPRINTF] = vsnprintf_wrapper,
 };
 
 #endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */

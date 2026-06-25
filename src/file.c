@@ -39,6 +39,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 
 /*
  * xipfs includes
@@ -382,9 +383,137 @@ static void *_exec_curr_stack USED;
  */
 char *xipfs_infos_file = "/.xipfs_infos";
 
+/**
+ * @internal
+ *
+ * This array tracks all opened file descriptors that have been opened
+ * by an executable during its lifetime, and that have not been properly
+ * closed.
+ *
+ * At this stage, XiPFS should not know anything about host own tracking capabilities.
+ * It could, but it would add some other include directives and that would be brittle.
+ * Then, XiPFS might be the limiting factor of simultaneous opened files in the system.
+ *
+ * Regarding to RIOT host:
+ * - XIPFS_MAX_OPEN_DESC has been chosen to be equal to VFS_MAX_OPEN_FILES,
+ * - VFS store STDOUT, STDIN and STDERR into the first 3 slots its own tracking array,
+ * so we should never exhaust xipfs_exec_tracking_opened_fds capacity.
+ * But yet again, VFS_MAX_OPEN_FILES could change.
+ */
+static int xipfs_exec_tracking_opened_fds[XIPFS_MAX_OPEN_DESC];
+
+/**
+ * @internal
+ *
+ * This function pointer stores the vfs_open pointer passed from callers when
+ * performing an xipfs_file_exec or xipfs_file_safe_exec.
+ */
+static xipfs_syscall_vfs_open_t xipfs_exec_tracking_original_vfs_open = NULL;
+
+/**
+ * @internal
+ *
+ * This function pointer stores the vfs_close pointer passed from callers when
+ * performing an xipfs_file_exec or xipfs_file_safe_exec.
+ */
+static xipfs_syscall_vfs_close_t xipfs_exec_tracking_original_vfs_close = NULL;
+
 /*
  * Helper functions
  */
+
+/**
+ * @internal
+ *
+ * @brief Value indicating a free slot in xipfs_exec_tracking_opened_fds
+ */
+#define EXECUTABLE_TRACKING_OPENED_FDS_FREE_SLOT ((int)-1)
+
+/**
+ * @internal
+ *
+ * @brief Initialize xipfs_exec_tracking_opened_fds array.
+ */
+static void xipfs_exec_tracking_init_opened_fds(void) {
+    const size_t xipfs_exec_tracking_opened_fds_count =
+        sizeof(xipfs_exec_tracking_opened_fds) / sizeof(xipfs_exec_tracking_opened_fds[0]);
+    for (size_t i = 0; i < xipfs_exec_tracking_opened_fds_count; i++) {
+        xipfs_exec_tracking_opened_fds[i] = EXECUTABLE_TRACKING_OPENED_FDS_FREE_SLOT;
+    }
+}
+
+/**
+ * @internal
+ *
+ * @brief Release still opened and tracked file descriptors.
+ */
+static void xipfs_exec_tracking_release_opened_fds(void) {
+    const size_t xipfs_exec_tracking_opened_fds_count =
+        sizeof(xipfs_exec_tracking_opened_fds) / sizeof(xipfs_exec_tracking_opened_fds[0]);
+    for (size_t i = 0; i < xipfs_exec_tracking_opened_fds_count; i++) {
+        if (xipfs_exec_tracking_opened_fds[i] != EXECUTABLE_TRACKING_OPENED_FDS_FREE_SLOT) {
+            (void)xipfs_exec_tracking_original_vfs_close(xipfs_exec_tracking_opened_fds[i]);
+            xipfs_exec_tracking_opened_fds[i] = EXECUTABLE_TRACKING_OPENED_FDS_FREE_SLOT;
+        }
+    }
+}
+
+/**
+ * @internal
+ *
+ * @brief Wrapper tracking opened file descriptors by executables.
+ */
+static int xipfs_exec_tracking_vfs_open_wrapper(const char *name, int flags, mode_t mode) {
+    const size_t xipfs_exec_tracking_opened_fds_count =
+        sizeof(xipfs_exec_tracking_opened_fds) / sizeof(xipfs_exec_tracking_opened_fds[0]);
+    for (size_t i = 0; i < xipfs_exec_tracking_opened_fds_count; i++) {
+        if (xipfs_exec_tracking_opened_fds[i] == EXECUTABLE_TRACKING_OPENED_FDS_FREE_SLOT) {
+            int ret = xipfs_exec_tracking_original_vfs_open(name, flags, mode);
+            if (ret >= 0) {
+                xipfs_exec_tracking_opened_fds[i] = ret;
+            }
+            return ret;
+        }
+    }
+
+    return -ENFILE;
+}
+
+/**
+ * @internal
+ *
+ * @brief Wrapper removing tracked and opened file descriptors by executables.
+ */
+static int xipfs_exec_tracking_vfs_close_wrapper(int fd) {
+    const size_t xipfs_exec_tracking_opened_fds_count =
+        sizeof(xipfs_exec_tracking_opened_fds) / sizeof(xipfs_exec_tracking_opened_fds[0]);
+    for (size_t i = 0; i < xipfs_exec_tracking_opened_fds_count; i++) {
+        if (xipfs_exec_tracking_opened_fds[i] == fd) {
+            int ret = xipfs_exec_tracking_original_vfs_close(fd);
+            if (ret >= 0) {
+                xipfs_exec_tracking_opened_fds[i] = EXECUTABLE_TRACKING_OPENED_FDS_FREE_SLOT;
+            }
+            return ret;
+        }
+    }
+
+    return -EBADF;
+}
+
+static void
+xipfs_exec_tracking_install_syscalls_wrappers(const void *syscalls[XIPFS_SYSCALL_MAX]) {
+    xipfs_exec_tracking_original_vfs_open  = syscalls[XIPFS_SYSCALL_VFS_OPEN];
+    syscalls[XIPFS_SYSCALL_VFS_OPEN]       = xipfs_exec_tracking_vfs_open_wrapper;
+
+    xipfs_exec_tracking_original_vfs_close = syscalls[XIPFS_SYSCALL_VFS_CLOSE];
+    syscalls[XIPFS_SYSCALL_VFS_CLOSE]      = xipfs_exec_tracking_vfs_close_wrapper;
+}
+
+static void
+xipfs_exec_tracking_remove_syscalls_wrappers(const void *syscalls[XIPFS_SYSCALL_MAX]) {
+    syscalls[ XIPFS_SYSCALL_VFS_OPEN] = xipfs_exec_tracking_original_vfs_open;
+    syscalls[XIPFS_SYSCALL_VFS_CLOSE] = xipfs_exec_tracking_original_vfs_close;
+}
 
 /**
  * @internal
@@ -656,6 +785,8 @@ exec_syscalls_init(const void *syscalls[XIPFS_SYSCALL_MAX])
 {
     xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context->argv;
 
+    xipfs_exec_tracking_install_syscalls_wrappers(syscalls);
+
     xipfs_crt0_ctx_data->syscall_table = exec_syscalls_copy_to_stack(syscalls);
     xipfs_crt0_ctx_data->is_safe_call  = 0;
 }
@@ -680,6 +811,8 @@ static inline void
 exec_syscalls_init_safe(const void *syscalls[XIPFS_SYSCALL_MAX])
 {
     xipfs_crt0_ctx_data_t *xipfs_crt0_ctx_data = (xipfs_crt0_ctx_data_t *)crt0_context->argv;
+
+    xipfs_exec_tracking_install_syscalls_wrappers(syscalls);
 
     xipfs_crt0_ctx_data->syscall_table =
         exec_syscalls_copy_to_stack(xipfs_safe_exec_syscalls_wrappers);
@@ -706,6 +839,8 @@ exec_init(xipfs_file_t *filp,
     exec_crt0_init(filp);
     exec_args_init(argv);
     exec_syscalls_init(syscalls);
+
+    xipfs_exec_tracking_init_opened_fds();
 }
 
 #if defined(XIPFS_ENABLE_SAFE_EXEC_SUPPORT)
@@ -735,6 +870,8 @@ exec_init_safe(xipfs_file_t *filp,
         return;
 
     exec_syscalls_init_safe(syscalls);
+
+    xipfs_exec_tracking_init_opened_fds();
 }
 #endif
 
@@ -1252,6 +1389,9 @@ xipfs_file_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
         : "=r"(status)
     );
 
+    xipfs_exec_tracking_release_opened_fds();
+    xipfs_exec_tracking_remove_syscalls_wrappers(syscalls);
+
     return status;
 #else /* XIPFS_HAS_ARM_EXEC */
 
@@ -1515,7 +1655,6 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
             xipfs_errno = XIPFS_EDATAREGION;
             return -1;
         }
-
     } else {
         if (xipfs_mpu_configure_region(
                 XIPFS_MPU_REGION_ENUM_DATA,
@@ -1555,7 +1694,6 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
         return -1;
     }
 
-
     /* Enable MPU if it is not already */
     if (mpu_enable() != 0) {
         on_mpu_setting_error(false);
@@ -1580,6 +1718,9 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
         : "=r"(status)
         : "r"(crt0_context), "r"(exec_entry_point), "r"(stack_top)
     );
+
+    xipfs_exec_tracking_release_opened_fds();
+    xipfs_exec_tracking_remove_syscalls_wrappers(syscalls);
 
     __disable_irq();
 
@@ -1819,8 +1960,6 @@ int xipfs_mem_manage_handler(void *isr_frame_ptr, uint32_t mmfar, uint32_t cfsr)
 void xipfs_syscall_dispatcher(unsigned int *svc_args)
 {
     unsigned int syscall_number = svc_args[0];
-    /*uint32_t *caller_stack;
-    uint32_t result;*/
 
     switch (syscall_number) {
     case XIPFS_SYSCALL_EXIT: {
@@ -1935,7 +2074,6 @@ void xipfs_syscall_dispatcher(unsigned int *svc_args)
         break;
     }
     case XIPFS_SYSCALL_VFS_OPEN: {
-        /* typedef int (*xipfs_vfs_open_t)(const char *name, int flags, mode_t mode); */
         const char *name = (const char *)svc_args[1];
         int flags = (int)svc_args[2];
         mode_t mode = (mode_t)svc_args[3];
@@ -2058,6 +2196,17 @@ void xipfs_syscall_dispatcher(unsigned int *svc_args)
         xipfs_syscall_vfs_mkdir_t f = (xipfs_syscall_vfs_mkdir_t)
             xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VFS_MKDIR];
         svc_args[0] = (int)f(name, mode);
+        break;
+    }
+    case XIPFS_SYSCALL_VSNPRINTF: {
+        xipfs_syscall_vsnprintf_params_t *params =
+            (xipfs_syscall_vsnprintf_params_t *)svc_args[1];
+
+        xipfs_syscall_vsnprintf_t f = (xipfs_syscall_vsnprintf_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_VSNPRINTF];
+
+        svc_args[0] = (int)f(params->str, params->size,
+                             params->format, params->ap);
         break;
     }
     default:

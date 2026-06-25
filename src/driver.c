@@ -74,7 +74,9 @@
  * @brief The set-user-ID and set-group-ID bits are ignored by
  *        xipfs_execv(3) for executable files on this filesystem
  */
+#ifndef XIPFS_WORKSTATION
 #define ST_NOSUID (2)
+#endif
 
 /**
  * @internal

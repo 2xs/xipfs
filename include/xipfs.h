@@ -53,8 +53,9 @@
 #if defined(XIPFS_WORKSTATION)
 
 /*
- * When building for workstation, we just need to define mutex_t to some valid definition
- * for compilation, but we never actually lock or unlock any mutex in the code.
+ * When building for workstation, we just need to define mutex_t
+ * to some valid definition for compilation, but we never actually
+ * lock or unlock any mutex in the code (mkxipfs).
  */
 typedef void mutex_t;
 
@@ -455,45 +456,51 @@ int xipfs_closedir(xipfs_mount_t *mp, xipfs_dir_desc_t *descp);
  * enumeration declared in caller site (xipfs_format stdriot's one).
  *
  * @brief An enumeration describing the index of functions.
+ * @remark Enumeration members are explicitly set to be able to
+ * to check easily syscalls IDs.
  * @see xipfs_execv, xipfs_safe_execv
  */
 typedef enum xipfs_syscall_e {
-    XIPFS_SYSCALL_EXIT,
-    XIPFS_SYSCALL_VPRINTF,
-    XIPFS_SYSCALL_GET_TEMP,
-    XIPFS_SYSCALL_ISPRINT,
-    XIPFS_SYSCALL_STRTOL,
-    XIPFS_SYSCALL_GET_LED,
-    XIPFS_SYSCALL_SET_LED,
-    XIPFS_SYSCALL_COPY_FILE,
-    XIPFS_SYSCALL_GET_FILE_SIZE,
-    XIPFS_SYSCALL_MEMSET,
-    XIPFS_SYSCALL_MEMCMP,
-    XIPFS_SYSCALL_STRCMP,
-    XIPFS_SYSCALL_STRNCMP,
+    XIPFS_SYSCALL_EXIT               = 0,
+    XIPFS_SYSCALL_VPRINTF            = 1,
+    XIPFS_SYSCALL_GET_TEMP           = 2,
+    XIPFS_SYSCALL_ISPRINT            = 3,
+    XIPFS_SYSCALL_STRTOL             = 4,
+    XIPFS_SYSCALL_GET_LED            = 5,
+    XIPFS_SYSCALL_SET_LED            = 6,
+    XIPFS_SYSCALL_COPY_FILE          = 7,
+    XIPFS_SYSCALL_GET_FILE_SIZE      = 8,
+    XIPFS_SYSCALL_MEMSET             = 9,
+    XIPFS_SYSCALL_MEMCMP             = 10,
+    XIPFS_SYSCALL_STRCMP             = 11,
+    XIPFS_SYSCALL_STRNCMP            = 12,
 
     /* VFS */
-    XIPFS_SYSCALL_VFS_OPEN,
-    XIPFS_SYSCALL_VFS_CLOSE,
-    XIPFS_SYSCALL_VFS_LSEEK,
-    XIPFS_SYSCALL_VFS_WRITE,
-    XIPFS_SYSCALL_VFS_READ,
-    XIPFS_SYSCALL_VFS_READLINE,
-    XIPFS_SYSCALL_VFS_STAT,
-    XIPFS_SYSCALL_VFS_FSTAT,
-    XIPFS_SYSCALL_VFS_STATVFS,
-    XIPFS_SYSCALL_VFS_FSTATVFS,
-    XIPFS_SYSCALL_VFS_RENAME,
-    XIPFS_SYSCALL_VFS_NORMALIZE_PATH,
-    XIPFS_SYSCALL_VFS_FSYNC,
-    XIPFS_SYSCALL_VFS_FCNTL,
-    XIPFS_SYSCALL_VFS_MKDIR,
+    XIPFS_SYSCALL_VFS_OPEN           = 13,
+    XIPFS_SYSCALL_VFS_CLOSE          = 14,
+    XIPFS_SYSCALL_VFS_LSEEK          = 15,
+    XIPFS_SYSCALL_VFS_WRITE          = 16,
+    XIPFS_SYSCALL_VFS_READ           = 17,
+    XIPFS_SYSCALL_VFS_READLINE       = 18,
+    XIPFS_SYSCALL_VFS_STAT           = 19,
+    XIPFS_SYSCALL_VFS_FSTAT          = 20,
+    XIPFS_SYSCALL_VFS_STATVFS        = 21,
+    XIPFS_SYSCALL_VFS_FSTATVFS       = 22,
+    XIPFS_SYSCALL_VFS_RENAME         = 23,
+    XIPFS_SYSCALL_VFS_NORMALIZE_PATH = 24,
+    XIPFS_SYSCALL_VFS_FSYNC          = 25,
+    XIPFS_SYSCALL_VFS_FCNTL          = 26,
+    XIPFS_SYSCALL_VFS_MKDIR          = 27,
+
+    XIPFS_SYSCALL_VSNPRINTF          = 28,
 
     XIPFS_SYSCALL_MAX
 } xipfs_syscall_t;
 
 typedef int (*xipfs_syscall_exit_t)(int status);
 typedef int (*xipfs_syscall_vprintf_t)(const char *format, va_list ap);
+typedef int (*xipfs_syscall_vsnprintf_t)(char *str, size_t size,
+                                         const char *format, va_list ap);
 typedef int (*xipfs_syscall_get_temp_t)(void);
 typedef int (*xipfs_syscall_isprint_t)(int character);
 typedef long (*xipfs_syscall_strtol_t)(
