@@ -49,6 +49,7 @@
 #include "include/errno.h"
 #include "include/file.h"
 #include "include/flash.h"
+#include "include/fmt.h"
 #include "include/path.h"
 
 #ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
@@ -2207,6 +2208,14 @@ void xipfs_syscall_dispatcher(unsigned int *svc_args)
 
         svc_args[0] = (int)f(params->str, params->size,
                              params->format, params->ap);
+        break;
+    }
+    case XIPFS_SYSCALL_SYS_PRINT_FMT: {
+        const xipfs_print_fmt_call_t *call =
+            (const xipfs_print_fmt_call_t *)svc_args[1];
+        xipfs_syscall_sys_print_fmt_t f = (xipfs_syscall_sys_print_fmt_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_SYS_PRINT_FMT];
+        f(call->fmt, call->fmt_len, call->args, call->nargs);
         break;
     }
     default:

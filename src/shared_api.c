@@ -1,3 +1,4 @@
+#include "include/fmt.h"
 #include "include/shared_api.h"
 
 #ifdef XIPFS_ENABLE_SAFE_EXEC_SUPPORT
@@ -582,6 +583,22 @@ static int mkdir_wrapper(const char *name, mode_t mode) {
     return res;
 }
 
+__attribute__((section(".xipfs_shared_api_code_in")))
+static void print_fmt_wrapper(const char *fmt, size_t fmt_len,
+                              const xipfs_print_arg_t *args, size_t nargs) {
+    /* 4 arguments do not fit in the SVC frame; pass them packed */
+    xipfs_print_fmt_call_t call = { fmt, fmt_len, args, nargs };
+
+    __asm__ volatile(
+        "mov r0, %0                            \n"
+        "mov r1, %1                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        :
+        : "r"(XIPFS_SYSCALL_SYS_PRINT_FMT), "r"(&call)
+        : "r0", "r1", "memory"
+    );
+}
+
 __attribute__((section(".xipfs_shared_api_code_in"), aligned(XIPFS_SHARED_API_CODE_SIZE), used, naked))
 static void end_xipfs_shared_api_code_in_function(void){}
 
@@ -627,6 +644,7 @@ const void *xipfs_safe_exec_syscalls_wrappers[XIPFS_SYSCALL_MAX] = {
     [         XIPFS_SYSCALL_VFS_MKDIR] = mkdir_wrapper,
 
     [         XIPFS_SYSCALL_VSNPRINTF] = vsnprintf_wrapper,
+    [     XIPFS_SYSCALL_SYS_PRINT_FMT] = print_fmt_wrapper,
 };
 
 #endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */

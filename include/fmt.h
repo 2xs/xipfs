@@ -61,6 +61,24 @@ typedef struct xipfs_print_arg_s {
 void xipfs_sys_print_fmt(const char *fmt, size_t fmt_len,
                          const xipfs_print_arg_t *args, size_t nargs);
 
+typedef void (*xipfs_syscall_sys_print_fmt_t)(const char *fmt, size_t fmt_len,
+                                              const xipfs_print_arg_t *args,
+                                              size_t nargs);
+
+/**
+ * @brief Packed arguments for the safe exec SVC path.
+ *
+ * The SVC frame only carries r0-r3 (syscall number + 3 words), one
+ * short of this syscall's arity, so the wrapper passes a pointer to
+ * this struct instead.
+ */
+typedef struct xipfs_print_fmt_call_s {
+    const char *fmt;
+    size_t fmt_len;
+    const xipfs_print_arg_t *args;
+    size_t nargs;
+} xipfs_print_fmt_call_t;
+
 #ifdef __cplusplus
 }
 #endif
