@@ -42,11 +42,15 @@
  */
 #include "include/fmt.h"
 
+/*
+ * Fields: {} default, {:x}/{:X} lower/upper hex, {:o} octal, {:p} address.
+ * A width pads with spaces; a leading zero pads with zeroes.
+ */
 typedef struct xipfs_format_spec_s {
-    int zero_pad;
-    unsigned int width;
-    char conversion;
-    size_t end;
+    int zero_pad;          /* Use zeroes instead of spaces. */
+    unsigned int width;    /* Minimum output width. */
+    char conversion;       /* Conversion code; 0 uses the default. */
+    size_t end;            /* Index of the closing brace. */
 } xipfs_format_spec_t;
 
 static int is_conversion(char c)
