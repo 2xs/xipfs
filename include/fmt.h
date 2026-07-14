@@ -42,12 +42,16 @@
 extern "C" {
 #endif
 
-/**
- * @brief Tagged print argument passed by Rust payloads.
- *
- * Must match rust-xipfs-lib's `#[repr(C, u32)] PrintArg`.
- * Tags: 0=Int, 1=Uint, 2=Str, 3=Hex, 4=Char (codepoint in `u`).
- */
+/** Tags used by rust-xipfs-lib's `PrintArg`. */
+typedef enum xipfs_print_arg_tag_e {
+    XIPFS_PRINT_ARG_INT  = 0,
+    XIPFS_PRINT_ARG_UINT = 1,
+    XIPFS_PRINT_ARG_STR  = 2,
+    XIPFS_PRINT_ARG_HEX  = 3,
+    XIPFS_PRINT_ARG_CHAR = 4,
+} xipfs_print_arg_tag_t;
+
+/** Must match rust-xipfs-lib's `#[repr(C, u32)] PrintArg`. */
 typedef struct xipfs_print_arg_s {
     uint32_t tag;
     union {
@@ -65,13 +69,7 @@ typedef void (*xipfs_syscall_sys_print_fmt_t)(const char *fmt, size_t fmt_len,
                                               const xipfs_print_arg_t *args,
                                               size_t nargs);
 
-/**
- * @brief Packed arguments for the safe exec SVC path.
- *
- * The SVC frame only carries r0-r3 (syscall number + 3 words), one
- * short of this syscall's arity, so the wrapper passes a pointer to
- * this struct instead.
- */
+/** Packed because SVC carries the syscall number and only three arguments. */
 typedef struct xipfs_print_fmt_call_s {
     const char *fmt;
     size_t fmt_len;

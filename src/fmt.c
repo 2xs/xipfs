@@ -42,106 +42,197 @@
  */
 #include "include/fmt.h"
 
-/* Default formatting for `{}`, by tag. */
-static void print_one(const xipfs_print_arg_t *a)
+typedef struct xipfs_format_spec_s {
+    int zero_pad;
+    unsigned int width;
+    char conversion;
+    size_t end;
+} xipfs_format_spec_t;
+
+static int is_conversion(char c)
 {
-    switch (a->tag) {
-    case 0: printf("%ld",   (long)a->v.i);              break;
-    case 1: printf("%lu",   (unsigned long)a->v.u);     break;
-    case 2: printf("%.*s",  (int)a->v.s.len, a->v.s.p); break;
-    case 3: printf("0x%lx", (unsigned long)a->v.h);     break;
-    case 4: putchar((int)(a->v.u & 0xff));              break;
+    return c == 'x' || c == 'X' || c == 'o' || c == 'p';
+}
+
+static int parse_spec(const char *fmt, size_t fmt_len, size_t start,
+                      xipfs_format_spec_t *spec)
+{
+    size_t pos = start;
+
+    spec->zero_pad = 0;
+    spec->width = 0;
+    spec->conversion = 0;
+
+    if (pos >= fmt_len) {
+        return -1;
+    }
+    if (fmt[pos] == '}') {
+        spec->end = pos;
+        return 0;
+    }
+    if (fmt[pos] != ':') {
+        return -1;
+    }
+    pos++;
+
+    if (pos < fmt_len && fmt[pos] == '0') {
+        spec->zero_pad = 1;
+        pos++;
+    }
+    while (pos < fmt_len && fmt[pos] >= '0' && fmt[pos] <= '9') {
+        spec->width = spec->width * 10U + (unsigned int)(fmt[pos] - '0');
+        if (spec->width > 99U) {
+            return -1;
+        }
+        pos++;
+    }
+
+    if (pos < fmt_len && fmt[pos] != '}') {
+        if (!is_conversion(fmt[pos])) {
+            return -1;
+        }
+        spec->conversion = fmt[pos];
+        pos++;
+    }
+    if (pos >= fmt_len || fmt[pos] != '}') {
+        return -1;
+    }
+
+    spec->end = pos;
+    return 0;
+}
+
+static void print_format_error(void)
+{
+    fputs("{?}", stdout);
+}
+
+static void print_default(const xipfs_print_arg_t *arg)
+{
+    switch (arg->tag) {
+    case XIPFS_PRINT_ARG_INT:
+        printf("%ld", (long)arg->v.i);
+        break;
+    case XIPFS_PRINT_ARG_UINT:
+        printf("%lu", (unsigned long)arg->v.u);
+        break;
+    case XIPFS_PRINT_ARG_STR:
+        printf("%.*s", (int)arg->v.s.len, arg->v.s.p);
+        break;
+    case XIPFS_PRINT_ARG_HEX:
+        printf("0x%lx", (unsigned long)arg->v.h);
+        break;
+    case XIPFS_PRINT_ARG_CHAR:
+        putchar((int)(arg->v.u & 0xffU));
+        break;
+    default:
+        print_format_error();
+        break;
     }
 }
 
-/* Apply a parsed `{:0Nx}`-style spec by building a printf conversion. */
-static void print_spec(const xipfs_print_arg_t *a, int zero, int width, char type)
+static char numeric_conversion(const xipfs_print_arg_t *arg,
+                               const xipfs_format_spec_t *spec)
 {
-    if (type == 0 && width == 0 && !zero) {
-        print_one(a);
+    if (spec->conversion == 'x' || spec->conversion == 'X'
+        || spec->conversion == 'o') {
+        return spec->conversion;
+    }
+    return arg->tag == XIPFS_PRINT_ARG_INT ? 'd' : 'u';
+}
+
+static void print_spec(const xipfs_print_arg_t *arg,
+                       const xipfs_format_spec_t *spec)
+{
+    char format[12];
+    size_t pos = 0;
+    char conversion;
+
+    if (spec->conversion == 0 && spec->width == 0 && !spec->zero_pad) {
+        print_default(arg);
         return;
     }
-    /* strings ignore numeric specs */
-    if (a->tag == 2) {
-        printf("%.*s", (int)a->v.s.len, a->v.s.p);
+    if (arg->tag == XIPFS_PRINT_ARG_STR) {
+        print_default(arg);
         return;
     }
-    if (type == 'p') {
-        printf("0x%08lx", (unsigned long)a->v.u);
+    if (spec->conversion == 'p') {
+        printf("0x%08lx", (unsigned long)arg->v.u);
         return;
     }
-    char f[12];
-    int k = 0;
-    f[k++] = '%';
-    if (zero) {
-        f[k++] = '0';
+
+    format[pos++] = '%';
+    if (spec->zero_pad) {
+        format[pos++] = '0';
     }
-    if (width >= 10) {
-        f[k++] = (char)('0' + (width / 10) % 10);
+    if (spec->width >= 10U) {
+        format[pos++] = (char)('0' + spec->width / 10U);
     }
-    if (width > 0) {
-        f[k++] = (char)('0' + width % 10);
+    if (spec->width > 0U) {
+        format[pos++] = (char)('0' + spec->width % 10U);
     }
-    f[k++] = 'l';
-    /* `f` is built on purpose; silence -Wformat-nonliteral */
+    format[pos++] = 'l';
+    conversion = numeric_conversion(arg, spec);
+    format[pos++] = conversion;
+    format[pos] = '\0';
+
+    /* The format is assembled from the validated spec above. */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
-    if (type == 'x' || type == 'X' || type == 'o') {
-        f[k++] = type;
-        f[k] = 0;
-        printf(f, (unsigned long)(a->tag == 0 ? (unsigned long)a->v.i : a->v.u));
-    } else if (a->tag == 0) {
-        f[k++] = 'd';
-        f[k] = 0;
-        printf(f, (long)a->v.i);
+    if (conversion == 'd') {
+        printf(format, (long)arg->v.i);
     } else {
-        f[k++] = 'u';
-        f[k] = 0;
-        printf(f, (unsigned long)a->v.u);
+        printf(format, (unsigned long)arg->v.u);
     }
 #pragma GCC diagnostic pop
 }
 
-/*
- * Walk the format string, substituting `{}`/`{:spec}` with the next
- * argument. `{{`/`}}` are literal braces. No auto-newline.
- */
 void xipfs_sys_print_fmt(const char *fmt, size_t fmt_len,
                          const xipfs_print_arg_t *args, size_t nargs)
 {
-    size_t ai = 0;
+    size_t arg_index = 0;
+
+    if (fmt == NULL || (nargs > 0 && args == NULL)) {
+        print_format_error();
+        return;
+    }
+
     for (size_t i = 0; i < fmt_len; i++) {
         char c = fmt[i];
+
         if (c == '{') {
-            if (i + 1 < fmt_len && fmt[i + 1] == '{') { putchar('{'); i++; continue; }
-            size_t j = i + 1;
-            if (j < fmt_len && fmt[j] == ':') {
-                j++;
+            xipfs_format_spec_t spec;
+
+            if (i + 1 < fmt_len && fmt[i + 1] == '{') {
+                putchar('{');
+                i++;
+                continue;
             }
-            int zero = 0;
-            if (j < fmt_len && fmt[j] == '0') { zero = 1; j++; }
-            int width = 0;
-            while (j < fmt_len && fmt[j] >= '0' && fmt[j] <= '9') {
-                width = width * 10 + (fmt[j] - '0');
-                j++;
+            if (parse_spec(fmt, fmt_len, i + 1, &spec) < 0) {
+                print_format_error();
+                return;
             }
-            char type = 0;
-            if (j < fmt_len && fmt[j] != '}') {
-                type = fmt[j];
-                j++;
-            }
-            while (j < fmt_len && fmt[j] != '}') {
-                j++;
-            }
-            i = j; /* loop ++ steps past '}' */
-            if (ai < nargs) {
-                print_spec(&args[ai++], zero, width, type);
+
+            i = spec.end;
+            if (arg_index < nargs) {
+                print_spec(&args[arg_index], &spec);
+                arg_index++;
             } else {
-                fputs("{?}", stdout);
+                print_format_error();
             }
             continue;
         }
-        if (c == '}' && i + 1 < fmt_len && fmt[i + 1] == '}') { putchar('}'); i++; continue; }
+
+        if (c == '}') {
+            if (i + 1 < fmt_len && fmt[i + 1] == '}') {
+                putchar('}');
+                i++;
+                continue;
+            }
+            print_format_error();
+            return;
+        }
+
         putchar(c);
     }
 }
