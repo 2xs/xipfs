@@ -53,10 +53,9 @@ extern "C" {
  * From https://developer.arm.com/documentation/ddi0403/d/System-Level-Architecture/System-Address-Map/Protected-Memory-System-Architecture--PMSAv7/PMSAv7-compliant-MPU-operation?lang=en
  */
 typedef enum xipfs_mpu_region_enum_e {
-    XIPFS_MPU_REGION_ENUM_TEXT        = 2,
-    XIPFS_MPU_REGION_ENUM_EXTRA_TEXT  = 3,
-    XIPFS_MPU_REGION_ENUM_DATA        = 4,
-    XIPFS_MPU_REGION_ENUM_EXTRA_DATA  = 5,
+    XIPFS_MPU_REGION_ENUM_TEXT        = 3,
+    XIPFS_MPU_REGION_ENUM_EXTRA_TEXT  = 4,
+    XIPFS_MPU_REGION_ENUM_DATA        = 5,
     XIPFS_MPU_REGION_ENUM_STACK       = 6,
     XIPFS_MPU_REGION_ENUM_SHARED_API  = 7,
 

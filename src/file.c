@@ -68,24 +68,6 @@
 /**
  * @internal
  *
- * @def XIPFS_FREE_RAM_SIZE
- *
- * @brief Amount of free RAM available for the relocatable
- * binary to use
- */
-//#define XIPFS_FREE_RAM_SIZE (4096)
-#define XIPFS_FREE_RAM_SIZE (1024*12)
-
-/**
- * @internal
- *
- * @def EXEC_STACKSIZE_DEFAULT
- *
- * @brief The default execution stack size of the binary
- */
-#define EXEC_STACKSIZE_DEFAULT 2048 // 1024
-
-/**
  * @def EXC_RETURN_THREAD_MODE_PSP
  *
  * @brief The exec return adress to return from handler mode
@@ -94,6 +76,8 @@
 #define EXC_RETURN_THREAD_MODE_PSP      0xFFFFFFFD
 
 /**
+ * @internal
+ *
  * @def XPSR_THUMB_MODE
  *
  * @brief The mask used during context switch to set xPSR to thumb mode,
@@ -298,8 +282,7 @@ typedef struct memories_context_s {
      * Reserved memory space in RAM for the free RAM to be used
      * by the relocatable binary
      */
-    //char ram_start[XIPFS_FREE_RAM_SIZE-1] __attribute__((aligned(XIPFS_FREE_RAM_SIZE)));
-    char ram_start[XIPFS_FREE_RAM_SIZE-1] __attribute__((aligned(4096)));
+    char ram_start[XIPFS_EXEC_RAM_SIZE-1] __attribute__((aligned(XIPFS_EXEC_RAM_SIZE)));
     /**
      * Last byte of the free RAM
      */
@@ -308,7 +291,7 @@ typedef struct memories_context_s {
      * Reserved memory space in RAM for the stack to be used by
      * the relocatable binary
      */
-    char stkbot[EXEC_STACKSIZE_DEFAULT-4] __attribute__((aligned(EXEC_STACKSIZE_DEFAULT)));
+    char stkbot[XIPFS_EXEC_STACK_SIZE-4] __attribute__((aligned(XIPFS_EXEC_STACK_SIZE)));
     /**
      * Last word of the stack indicating the top of the stack
      */
@@ -1397,7 +1380,7 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
 
     /* Check memories_context members, filp alignments and shared API start address. */
     if (!(
-              ((uint32_t)memories_context.stkbot % EXEC_STACKSIZE_DEFAULT == 0)
+              ((uint32_t)memories_context.stkbot % XIPFS_EXEC_STACK_SIZE == 0)
            && ((uint32_t)memories_context.ram_start % 4096 == 0)
            && ((uint32_t)filp % XIPFS_NVM_PAGE_SIZE == 0)
            && (((uint32_t)xipfs_shared_api_code_start & ~1) % XIPFS_SHARED_API_CODE_ALIGNMENT == 0)
@@ -1462,82 +1445,14 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
     }
 
     /*
-     * For the DATA segment, we can take advantage of the data size,
-     * fixed to 12 KB while aligning the ram to 4 KB boundaries.
-     * Within these conditions, it is possible to set 2 regions once
-     * for all, with no dynamic region assignments.
-     *
-     * When the ram is aligned to a 8 Kb boundary :
-     * - Set the first region A to {ram start, 8 KB size};
-     * - Set the second region B to {ram start + 8 KB, 4 KB size}.
-     *
-     * +--------+----+
-     * |    A   |  B |
-     * +--------+----+
-     * |        |    |
-     * |        |    .-- Ram start + 12 KB
-     * |        .------- Ram start + 8 KB
-     * .---------------- Ram starts at a 8KB boundary
-     *
-     * When the ram is aligned to a (8 + 4) KB boundary (which is a 4 KB boundary) :
-     * - Set the first region A to {ram start, 4 KB size};
-     * - Set the second region B to {ram start + 4 KB, 8 KB size}.
-     * +----+--------+
-     * |  A |    B   |
-     * +----+--------+
-     * |    |        |
-     * |    |        .-- Ram start + 12 KB
-     * |    .----------- Ram start + 4 KB
-     * .---------------- Ram starts at a 4 KB boundary, while not being a 8 KB one.
-     *
-     * These two cases cover up the whole 12 KB of ram, with no need for dynamic regions setting.
+     * Set MPU region for RAM
      */
-    /* Are we on a 8 KB boundary ? */
-    if ( ((((uint32_t)memories_context.ram_start) >> 12) & 1) == 0 ) {
-        if (xipfs_mpu_configure_region(
-                XIPFS_MPU_REGION_ENUM_DATA,
-                memories_context.ram_start, 8192,
-                XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
-
-            on_mpu_setting_error(mpu_was_enabled);
-
-            xipfs_errno = XIPFS_EDATAREGION;
-            return -1;
-        }
-
-        if (xipfs_mpu_configure_region(
-                XIPFS_MPU_REGION_ENUM_EXTRA_DATA,
-                memories_context.ram_start + 8192, 4096,
-                XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
-
-            on_mpu_setting_error(mpu_was_enabled);
-
-            xipfs_errno = XIPFS_EDATAREGION;
-            return -1;
-        }
-
-    } else {
-        if (xipfs_mpu_configure_region(
-                XIPFS_MPU_REGION_ENUM_DATA,
-                memories_context.ram_start, 4096,
-                XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
-
-            on_mpu_setting_error(mpu_was_enabled);
-
-            xipfs_errno = XIPFS_EDATAREGION;
-            return -1;
-        }
-
-        if (xipfs_mpu_configure_region(
-                XIPFS_MPU_REGION_ENUM_EXTRA_DATA,
-                memories_context.ram_start + 4096, 8192,
-                XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
-
-            on_mpu_setting_error(mpu_was_enabled);
-
-            xipfs_errno = XIPFS_EDATAREGION;
-            return -1;
-        }
+    if (xipfs_mpu_configure_region( XIPFS_MPU_REGION_ENUM_DATA,
+                                    memories_context.ram_start, XIPFS_EXEC_RAM_SIZE,
+                                    XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
+        on_mpu_setting_error(mpu_was_enabled);
+        xipfs_errno = XIPFS_EDATAREGION;
+        return -1;
     }
 
     /*
@@ -1546,7 +1461,7 @@ int xipfs_file_safe_exec(const xipfs_mount_t *mountp, xipfs_file_t *filp,
      */
     if (xipfs_mpu_configure_region(
             XIPFS_MPU_REGION_ENUM_STACK,
-            memories_context.stkbot, EXEC_STACKSIZE_DEFAULT,
+            memories_context.stkbot, XIPFS_EXEC_STACK_SIZE,
             XIPFS_MPU_REGION_EXC_NO, XIPFS_MPU_REGION_AP_RW_RW) < 0) {
 
         on_mpu_setting_error(mpu_was_enabled);

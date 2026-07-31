@@ -221,6 +221,29 @@ typedef void mutex_t;
  */
 #define XIPFS_CRT0_MAGIC_NUMBER_AND_VERSION (0xFACADE12UL)
 
+/**
+ * @def XIPFS_EXEC_RAM_SIZE
+ *
+ * @brief Amount of free RAM available for the relocatable
+ * binary to use
+ *
+ * @warning When XIPFS_ENABLE_SAFE_EXEC_SUPPORT is defined, this value must be :
+ *          - a power of two
+ *          - greater than or equal to 32
+ */
+#define XIPFS_EXEC_RAM_SIZE (4096)
+
+/**
+ * @def XIPFS_EXEC_STACK_SIZE
+ *
+ * @brief The execution stack size of the binary
+ *
+ * @warning When XIPFS_ENABLE_SAFE_EXEC_SUPPORT is defined, this value must be :
+ *          - a power of two
+ *          - greater than or equal to 32
+ */
+#define XIPFS_EXEC_STACK_SIZE 2048
+
 #ifdef __cplusplus
 extern "C" {
 #endif

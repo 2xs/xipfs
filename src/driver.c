@@ -1699,6 +1699,23 @@ xipfs_new_file(xipfs_mount_t *mp, const char *path,
     return 0;
 }
 
+/**
+ *
+ * @warning Keep this enum synchronized with FAE format & CRT0 definitions
+ */
+typedef enum binary_footer_offsets_e {
+    BINARY_FOOTER_RAM_SIZE_OFFSET                 = -28,
+    BINARY_FOOTER_BSS_SIZE_OFFSET                 = BINARY_FOOTER_RAM_SIZE_OFFSET,
+    BINARY_FOOTER_GOT_SIZE_OFFSET                 = -24,
+    BINARY_FOOTER_ROM_SIZE_OFFSET                 = -20,
+    BINARY_FOOTER_TEXT_SIZE_OFFSET                = BINARY_FOOTER_ROM_SIZE_OFFSET,
+    BINARY_FOOTER_ROM_RAM_SIZE_OFFSET             = -16,
+    BINARY_FOOTER_DATA_SIZE_OFFSET                = BINARY_FOOTER_ROM_RAM_SIZE_OFFSET,
+    BINARY_FOOTER_ENTRYPOINT_OFFSET               = -12,
+    BINARY_FOOTER_CRT0_OFFSET                     = -8,
+    BINARY_FOOTER_MAGIC_NUMBER_AND_VERSION_OFFSET = -4
+} binary_footer_offsets_t;
+
 static int
 xipfs_execv_check(xipfs_mount_t *mp, const char *path,
                   char *const argv[],
@@ -1762,25 +1779,74 @@ xipfs_execv_check(xipfs_mount_t *mp, const char *path,
     }
 
     xipfs_file_desc_t descp;
-    uint32_t last_uint32_value;
+    uint32_t magic_number_and_version, rom_ram_size, got_size, ram_size;
 
+    /* FAE format checks */
     if (xipfs_open(mp, &descp, path, O_RDONLY, 0) < 0)
         return -EINVAL;
 
-    if (xipfs_lseek(mp, &descp, -sizeof(last_uint32_value), SEEK_END) < 0) {
+    /* magic_number_and_version */
+    if (xipfs_lseek(mp, &descp,
+                    BINARY_FOOTER_MAGIC_NUMBER_AND_VERSION_OFFSET,
+                    SEEK_END) < 0) {
         (void)xipfs_close(mp, &descp);
         return -EIO;
     }
 
-    if (xipfs_read(mp, &descp, &last_uint32_value, sizeof(last_uint32_value)) < 0) {
+    if (xipfs_read(mp, &descp, &magic_number_and_version, sizeof(magic_number_and_version)) < 0) {
+        (void)xipfs_close(mp, &descp);
+        return -EIO;
+    }
+
+    if (magic_number_and_version != XIPFS_CRT0_MAGIC_NUMBER_AND_VERSION) {
+        (void)xipfs_close(mp, &descp);
+        return -EBADF;
+    }
+
+    /* rom_ram_size */
+    if (xipfs_lseek(mp, &descp,
+                    BINARY_FOOTER_ROM_RAM_SIZE_OFFSET,
+                    SEEK_END) < 0) {
+        (void)xipfs_close(mp, &descp);
+        return -EIO;
+    }
+
+    if (xipfs_read(mp, &descp, &rom_ram_size, sizeof(rom_ram_size)) < 0) {
+        (void)xipfs_close(mp, &descp);
+        return -EIO;
+    }
+
+    /* got_size */
+    if (xipfs_lseek(mp, &descp,
+                    BINARY_FOOTER_GOT_SIZE_OFFSET,
+                    SEEK_END) < 0) {
+        (void)xipfs_close(mp, &descp);
+        return -EIO;
+    }
+
+    if (xipfs_read(mp, &descp, &got_size, sizeof(got_size)) < 0) {
+        (void)xipfs_close(mp, &descp);
+        return -EIO;
+    }
+
+    /* ram_size */
+    if (xipfs_lseek(mp, &descp,
+                    BINARY_FOOTER_RAM_SIZE_OFFSET,
+                    SEEK_END) < 0) {
+        (void)xipfs_close(mp, &descp);
+        return -EIO;
+    }
+
+    if (xipfs_read(mp, &descp, &ram_size, sizeof(ram_size)) < 0) {
         (void)xipfs_close(mp, &descp);
         return -EIO;
     }
 
     (void)xipfs_close(mp, &descp);
 
-    if (last_uint32_value != XIPFS_CRT0_MAGIC_NUMBER_AND_VERSION)
-        return -EBADF;
+    if ((got_size + ram_size + rom_ram_size) > XIPFS_EXEC_STACK_SIZE) {
+        return -ENOMEM;
+    }
 
     return 0;
 }
