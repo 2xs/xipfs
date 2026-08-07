@@ -73,25 +73,37 @@ SOURCES         = $(wildcard src/*.c)
 OBJECTS         = $(SOURCES:.c=.o)
 
 OBJS = $(addprefix $(BOARD)/,$(OBJECTS))
+DEPS = $(OBJS:%.o=%.d)
+
+QUIET ?= 1
+ifeq ($(strip $(QUIET)),1)
+QUIET_CHAR = @
+else
+QUIET_CHAR =
+endif
 
 all: $(BOARD)/$(TARGET).a
 
 $(BOARD)/src:
-	mkdir -p $(BOARD)/src
+	$(QUIET_CHAR)mkdir -p $(BOARD)/src
 
 $(BOARD)/src/%.c: src/%.c $(BOARD)/src
-	cp $< $@
+	$(QUIET_CHAR)cmp -s $< $@ || cp $< $@
+
+.PRECIOUS: $(BOARD)/src/%.c
 
 $(BOARD)/$(TARGET).a: $(OBJS)
-	$(AR) rcs $@ $^
+	$(QUIET_CHAR)$(AR) rcs $@ $^
 
 $(BOARD)/src/%.o: $(BOARD)/src/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(QUIET_CHAR)$(CC) $(CFLAGS) -MD -MP -MF $(patsubst %.o,%.d, $@) -c $< -o $@
+
+-include $(DEPS)
 
 realclean: clean
-	$(RM) -rf $(BOARD)
+	$(QUIET_CHAR)$(RM) -rf $(BOARD)
 
 clean:
-	$(RM) $(BOARD)/$(OBJECTS)
+	$(QUIET_CHAR)$(RM) $(BOARD)/$(OBJECTS)
 
 .PHONY: all realclean clean
