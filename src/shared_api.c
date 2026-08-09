@@ -217,6 +217,43 @@ static void *memset_wrapper(void *m, int c, size_t n) {
     return res;
 }
 
+__attribute__((section(".xipfs_shared_api_code_in")))
+static size_t strlen_wrapper(const char *s) {
+    size_t res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_STRLEN), "r"(s)
+        : "r0", "r1"
+    );
+
+    return res;
+}
+
+#ifdef XIPFS_ENABLE_SCRIBE_SUPPORT
+__attribute__((section(".xipfs_shared_api_code_in")))
+static scribe_code_t scribe_write_wrapper(const void *data, size_t bytesize) {
+    scribe_code_t res;
+
+    __asm__ volatile(
+        "mov r0, %1                            \n"
+        "mov r1, %2                            \n"
+        "mov r2, %3                            \n"
+        "svc #" STR(XIPFS_SYSCALL_SVC_NUMBER) "\n"
+        "mov %0, r0                            \n"
+        : "=r"(res)
+        : "r"(XIPFS_SYSCALL_SCRIBE_WRITE), "r"(data), "r"(bytesize)
+        : "r0", "r1"
+    );
+
+    return res;
+}
+#endif /* XIPFS_ENABLE_SCRIBE_SUPPORT */
+
 __attribute__((section(".xipfs_shared_api_code_in"), aligned(XIPFS_SHARED_API_CODE_SIZE), used, naked))
 static void end_xipfs_shared_api_code_in_function(void){}
 
@@ -239,7 +276,11 @@ const void *xipfs_safe_exec_syscalls_wrappers[XIPFS_SYSCALL_MAX] = {
     [      XIPFS_SYSCALL_SET_LED] = set_led_wrapper,
     [    XIPFS_SYSCALL_COPY_FILE] = copy_file_wrapper,
     [XIPFS_SYSCALL_GET_FILE_SIZE] = get_file_size_wrapper,
-    [       XIPFS_SYSCALL_MEMSET] = memset_wrapper
+    [       XIPFS_SYSCALL_MEMSET] = memset_wrapper,
+    [       XIPFS_SYSCALL_STRLEN] = strlen_wrapper,
+#ifdef XIPFS_ENABLE_SCRIBE_SUPPORT
+    [ XIPFS_SYSCALL_SCRIBE_WRITE] = scribe_write_wrapper,
+#endif /* XIPFS_ENABLE_SCRIBE_SUPPORT */
 };
 
 #endif /* XIPFS_ENABLE_SAFE_EXEC_SUPPORT */

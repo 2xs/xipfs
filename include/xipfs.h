@@ -44,6 +44,10 @@
 #include <sys/types.h>
 #include <assert.h>
 
+#ifdef XIPFS_ENABLE_SCRIBE_SUPPORT
+#include "include/scribe.h"
+#endif
+
 #ifndef RIOT_VERSION
 
 #include "xipfs_config.h"
@@ -490,6 +494,11 @@ typedef enum xipfs_syscall_e {
     XIPFS_SYSCALL_COPY_FILE,
     XIPFS_SYSCALL_GET_FILE_SIZE,
     XIPFS_SYSCALL_MEMSET,
+    XIPFS_SYSCALL_STRLEN,
+#ifdef XIPFS_ENABLE_SCRIBE_SUPPORT
+    XIPFS_SYSCALL_SCRIBE_WRITE,
+#endif /* XIPFS_ENABLE_SCRIBE_SUPPORT */
+
     XIPFS_SYSCALL_MAX
 } xipfs_syscall_t;
 
@@ -506,6 +515,10 @@ typedef ssize_t (*xipfs_syscall_copy_file_t)(
 typedef int (*xipfs_syscall_get_file_size_t)(
     const char *name, size_t *size);
 typedef void *(*xipfs_syscall_memset_t)(void *m, int c, size_t n);
+typedef size_t (*xipfs_syscall_strlen_t)(const char *s);
+#ifdef XIPFS_ENABLE_SCRIBE_SUPPORT
+typedef scribe_code_t (*xipfs_syscall_scribe_write_t)(const void *data, size_t bytesize);
+#endif /* XIPFS_ENABLE_SCRIBE_SUPPORT */
 
 int xipfs_execv(xipfs_mount_t *mp, const char *full_path, char *const argv[],
                 const void *user_syscalls[XIPFS_SYSCALL_MAX]);
