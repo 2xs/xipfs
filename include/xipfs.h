@@ -498,7 +498,6 @@ typedef enum xipfs_syscall_e {
 #ifdef XIPFS_ENABLE_SCRIBE_SUPPORT
     XIPFS_SYSCALL_SCRIBE_WRITE,
 #endif /* XIPFS_ENABLE_SCRIBE_SUPPORT */
-
     XIPFS_SYSCALL_MAX
 } xipfs_syscall_t;
 

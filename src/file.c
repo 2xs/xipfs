@@ -1823,6 +1823,23 @@ void xipfs_syscall_dispatcher(unsigned int *svc_args)
         svc_args[0] = (uintptr_t)f(m, c, n);
         break;
     }
+    case XIPFS_SYSCALL_STRLEN: {
+        const char *s = (const char *)svc_args[1];
+        xipfs_syscall_strlen_t f = (xipfs_syscall_strlen_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_STRLEN];
+        svc_args[0] = (size_t)f(s);
+        break;
+    }
+#ifdef XIPFS_ENABLE_SCRIBE_SUPPORT
+    case XIPFS_SYSCALL_SCRIBE_WRITE: {
+        const void *data = (const void *)svc_args[1];
+        size_t bytesize = (size_t)svc_args[2];
+        xipfs_syscall_scribe_write_t f = (xipfs_syscall_scribe_write_t)
+            xipfs_safe_exec_syscalls_table[XIPFS_SYSCALL_SCRIBE_WRITE];
+        svc_args[0] = (scribe_code_t)f(data, bytesize);
+        break;
+    }
+#endif /* XIPFS_ENABLE_SCRIBE_SUPPORT */
     default:
         return;
     }
