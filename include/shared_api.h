@@ -15,4 +15,11 @@ extern const void *xipfs_safe_exec_syscalls_wrappers[XIPFS_SYSCALL_MAX];
 
 #endif
 
+typedef struct {
+    char *str;
+    size_t size;
+    const char *format;
+    va_list ap;
+} xipfs_syscall_vsnprintf_params_t;
+
 #endif

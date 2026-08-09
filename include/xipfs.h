@@ -495,8 +495,10 @@ typedef enum xipfs_syscall_e {
     XIPFS_SYSCALL_GET_FILE_SIZE,
     XIPFS_SYSCALL_MEMSET,
     XIPFS_SYSCALL_STRLEN,
+    XIPFS_SYSCALL_VSNPRINTF,
 #ifdef XIPFS_ENABLE_SCRIBE_SUPPORT
     XIPFS_SYSCALL_SCRIBE_WRITE,
+    XIPFS_SYSCALL_SCRIBE_CODE_GET_LABEL,
 #endif /* XIPFS_ENABLE_SCRIBE_SUPPORT */
     XIPFS_SYSCALL_MAX
 } xipfs_syscall_t;
@@ -515,8 +517,11 @@ typedef int (*xipfs_syscall_get_file_size_t)(
     const char *name, size_t *size);
 typedef void *(*xipfs_syscall_memset_t)(void *m, int c, size_t n);
 typedef size_t (*xipfs_syscall_strlen_t)(const char *s);
+typedef int (*xipfs_syscall_vsnprintf_t)(char *buffer, size_t buffer_bytesize,
+                                         const char *format, va_list va);
 #ifdef XIPFS_ENABLE_SCRIBE_SUPPORT
 typedef scribe_code_t (*xipfs_syscall_scribe_write_t)(const void *data, size_t bytesize);
+typedef const char *(*xipfs_syscall_scribe_code_get_label_t)(scribe_code_t code);
 #endif /* XIPFS_ENABLE_SCRIBE_SUPPORT */
 
 int xipfs_execv(xipfs_mount_t *mp, const char *full_path, char *const argv[],
