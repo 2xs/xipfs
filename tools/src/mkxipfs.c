@@ -42,6 +42,7 @@ void usage(const char *prog)
             "\n"
             "Options:\n"
             "  --flash <filename.flash>   Flash image for commands other than create/build/test\n"
+            "                             Instead of this option, you can also use \"export XIPFS_FILE_IMAGE=<filename.flash>\".\n"
             "  --target <target_name>     Target device name, to be chosen among supported ones.\n"
             "                             Instead of this option, you can also use \"export XIPFS_TARGET=<target_name>\".\n"
             "\n"
