@@ -46,7 +46,7 @@ extern "C" {
  * @brief MPU regions identifiers.
  *
  * @remarks These identifiers have been chosen with respect to
- * regions ids used by RIOT OS for stack guard (1) and ram no exec(0).
+ * regions ids used by RIOT OS for stack guard (1+2) and ram no exec(0).
  *
  * @remarks "Where there is an overlap between two regions, the register with
  * the highest region number takes priority."
