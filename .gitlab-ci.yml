@@ -1,0 +1,15 @@
+image: "fvanhems/xipfs:1.0.0"
+
+build mkxipfs and test:
+  stage: build
+  script:
+    - make -C tools
+    - tools/bin/mkxipfs --target dwm1001 test
+    - tools/bin/mkxipfs --target dwm1001 test_deep
+    - tools/bin/mkxipfs --target dwm1001 test_build
+    - tools/bin/mkxipfs --target dwm1001 test_check_path
+
+  artifacts:
+    paths:
+      - tools/bin/mkxipfs
+    expire_in: 1 hour
