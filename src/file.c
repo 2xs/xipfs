@@ -441,7 +441,12 @@ xipfs_exec_enter(void *crt0_ctx UNUSED,
         " ldr r4, =_exec_curr_stack \n"
         " str sp, [r4]              \n"
         " mov sp, r2                \n"
+        " mov r9, %0                \n"
         " blx r1                    \n"
+        " ldr r4, =_exec_curr_stack \n"
+        " ldr sp, [r4]              \n"
+        " pop {r4-r11, pc}          \n"
+        ::"r"(&memories_context.ram_start):"r9"
     );
 #else /* XIPFS_HAS_ARM_EXEC */
 
@@ -1685,6 +1690,8 @@ static void init_isr_stack_frame(isr_stack_frame_t *frame)
  */
 extern void *thread_isr_stack_end(void);
 
+extern void xipfs_safe_exec_exit(int status);
+
 void xipfs_safe_exec_enter(void *crt0_context,
                            void *entrypoint,
                            void *stack)
@@ -1696,9 +1703,27 @@ void xipfs_safe_exec_enter(void *crt0_context,
     init_isr_stack_frame(frame);
     frame->r0 = (uint32_t)crt0_context;
     frame->pc = (uint32_t)entrypoint;
+    frame->lr = (uint32_t)(uintptr_t)xipfs_safe_exec_syscalls_wrappers[XIPFS_SYSCALL_EXIT];
 
     void *isr_stack_top = thread_isr_stack_end();
-    xipfs_switch_context(stack_ptr, CTRL_USER_PSP, isr_stack_top);
+
+    /* xipfs_switch_context(stack_ptr, CTRL_USER_PSP, isr_stack_top); */
+    __asm__ volatile(
+        "cpsid i                                      \n" /* disable interrupts */
+        " mov r9, %0                                  \n" /* set R9 to the RAM start */
+        /* Switch to thread mode with psp stack */
+        "msr psp, %1                                  \n" /* set psp to begin of stack frame */
+        "msr msp, %3                                  \n" /* restore isr stack to end because we never return from the interrupt */
+        "msr control, %2                              \n" /* set the control register to control arg */
+        "isb                                          \n"
+        "ldr r0, =" STR(EXC_RETURN_THREAD_MODE_PSP) " \n" /* exec return to thread mode using psp */
+        "cpsie i                                      \n" /* enable interrupts */
+        "bx r0                                        \n" /* jump to exec return to thread mode with psp */
+        :
+        :"r"(&memories_context.ram_start),
+         "r"(stack_ptr), "r"(CTRL_USER_PSP), "r"(isr_stack_top)
+        : "r9", "r0"
+    );
 }
 
 /**
@@ -1711,6 +1736,10 @@ void xipfs_safe_exec_enter(void *crt0_context,
  * privileged mode and exit safely
  *
  * @param status The return status of the safe call
+ * @remarks Should be static but since we need to provide it in the syscalls array
+ *          on OS host side, while not publicly expose its declaration,
+ *          this function is declared as an extern; but sliently.
+ *          A fix may be welcome.
  */
 void xipfs_safe_exec_exit(int status) {
     uint32_t *current_stack_ptr = (uint32_t *)_exec_curr_stack;
