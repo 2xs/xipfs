@@ -533,7 +533,7 @@ exec_crt0_init(xipfs_file_t *filp)
     xipfs_crt0_ctx_data->file_base = filp;
 #if XIPFS_HAS_ARM_EXEC
     __asm__ volatile (
-        "mov %0, sl"
+        "mov %0, r9"
         : "=r"(xipfs_crt0_ctx_data->former_got)
     );
 #else /* XIPFS_HAS_ARM_EXEC */
