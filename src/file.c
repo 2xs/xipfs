@@ -1712,7 +1712,7 @@ void xipfs_safe_exec_enter(void *crt0_context,
         "cpsid i                                      \n" /* disable interrupts */
         " mov r9, %0                                  \n" /* set R9 to the RAM start */
         /* Switch to thread mode with psp stack */
-        "msr psp, %1                                  \n" /* set psp to begin of stack frame */
+        "msr psp, %1                                  \n" /* set psp to the beginning of stack frame */
         "msr msp, %3                                  \n" /* restore isr stack to end because we never return from the interrupt */
         "msr control, %2                              \n" /* set the control register to control arg */
         "isb                                          \n"
